@@ -1,7 +1,7 @@
 use glib::subclass::InitializingObject;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
-use gtk::{glib, Button, CompositeTemplate};
+use gtk::{glib, Button, CompositeTemplate, Image};
 
 // Object holding the state
 #[derive(CompositeTemplate, Default)]
@@ -9,6 +9,8 @@ use gtk::{glib, Button, CompositeTemplate};
 pub struct Window {
     #[template_child]
     pub button: TemplateChild<Button>,
+    #[template_child]
+    pub image: TemplateChild<Image>,
 }
 
 // The central trait for subclassing a GObject
@@ -39,6 +41,9 @@ impl ObjectImpl for Window {
           // Set the label to "Hello World!" after the button has been clicked on
           button.set_label("Hello World!");
       });
+
+      let filename = "reward_vs_steps.png";
+      self.image.set_from_file(Some(filename));
   }
 }
 
