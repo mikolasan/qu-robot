@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use rand::Rng;
 use plotters::prelude::*;
-use ndarray::{array, Array2};
+use ndarray::{array, Array2, Axis};
 use gtk::{prelude::*, gio};
 use gtk::{glib, Application, ApplicationWindow, Button, Image};
 
@@ -104,9 +104,30 @@ fn simulate() {
     ('G', 1),
   ]);
 
+  let mut transition_prob = Array2::<f32>::zeros((states.len(), actions.len()));
+  // # actions = rows
+  // # states = columns
+  //        North South East West
+  // Start [                     ]
+  // Free  [                     ]
+  // Hole  [                     ]
+  // Goal  [                     ]
+  for mut row in transition_prob.axis_iter_mut(Axis(0)) {
+    let p = 1.0 / (row.len() as f32);
+    for e in row.iter_mut() {
+      *e = p;
+    }
+  }
+  // for row in transition_prob.rows() {
+  //   let p = 1.0 / (actions.len() as f32);
+  //   for e in row {
+  //     e = p;
+  //   }
+  // }
+
   let mut rng = rand::thread_rng();
   // let final_state = 'G';
-  let max_iter = 1;
+  let max_iter = 100;
   let mut data_points = Vec::new();
 
   for i in 0..max_iter {
@@ -117,12 +138,49 @@ fn simulate() {
     'steps: loop {
       step += 1;
 
-      let p = rng.gen_range(0..actions.len());
-      let random_action = actions[p];
+      let p: f32 = rng.gen();
+      // let random_action = actions[p];
+      let current_state = gw.get(loc).unwrap().clone();
+      let state_id = states.iter().position(|&c| c == current_state).unwrap();
+      let mut cumulative_prob = 0.0;
+      let mut next_action_id = None;
+
+      for (i, &weight) in transition_prob.row(state_id).iter().enumerate() {
+        cumulative_prob += weight;
+        if p <= cumulative_prob {
+          next_action_id = Some(i);
+          break;
+        }
+      }
+
+      match next_action_id {
+        Some(action) => {
+          println!("Randomly selected action: {}", action);
+        }
+        None => {
+          println!("No action selected. Check your weights.");
+        }
+      }
+      let random_action = actions[next_action_id.unwrap()];
+
       loc = gw.perform_motion(loc, random_action);
       let state: &char = gw.get(loc).unwrap();
       
-      let step_reward = reward_map.get(state).unwrap();
+      let step_reward = reward_map.get(state).unwrap().clone();
+      if step_reward != 0 {
+        let triggered_prob = transition_prob.get((state_id, next_action_id.unwrap())).unwrap();
+        let delta = triggered_prob / 2.0;
+        let delta_rem = delta / ((actions.len() - 1) as f32);
+        let mut row = transition_prob.row_mut(state_id);
+        for (i, e) in row.indexed_iter_mut() {
+          if i == next_action_id.unwrap() {
+            *e += delta;
+          } else {
+            *e -= delta_rem;
+          }
+        }
+
+      }
       data_points.push((step, step_reward.clone()));
       reward += step_reward;
       println!("step ({}) {} {} = {} | {} ... {}", 
