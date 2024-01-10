@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use std::convert::TryInto;
 use rand::Rng;
-use plotters::prelude::*;
+use plotters::{prelude::*, data};
 use ndarray::{array, Array2, Axis};
 use gtk::{prelude::*, gio};
 use gtk::{glib, Application, ApplicationWindow, Button, Image};
@@ -14,6 +15,11 @@ use crate::{
 };
 // mod frozen_lake;
 // use crate::frozen_lake::FrozenLake;
+
+fn vec2array<T, const N: usize>(v: Vec<T>) -> [T; N] {
+    v.try_into()
+        .unwrap_or_else(|v: Vec<T>| panic!("Expected a Vec of length {} but it was {}", N, v.len()))
+}
 
 const APP_ID: &str = "xyz.k_robot_lab.QuRobot";
 const PLOT_FILE: &str = "reward_vs_steps.png";
@@ -59,18 +65,35 @@ fn plot_graph(data_points: Vec<(i32, i32)>) {
       .margin(5)
       .x_label_area_size(40)
       .y_label_area_size(40)
-      .build_cartesian_2d(0..10, -1..1)
+      .build_cartesian_2d(0..data_points.len(), 0..200)
       .unwrap();
 
   // Draw the line plot
   chart
       .configure_mesh()
-      .y_desc("Reward")
-      .x_desc("Steps")
+      .y_desc("Steps")
+      .x_desc("Iteration")
       .draw()
       .unwrap();
 
-  chart.draw_series(LineSeries::new(data_points, &RED)).unwrap();
+  // let arr = vec2array(data_points);
+  let series = (0..)
+    .zip(data_points.iter())
+    .map(
+      |(x, y)| Circle::new((x, y.0), 3, BLUE.filled())
+    )
+    ;
+
+    // (0..).zip(data.iter()).map(|(x, y)| (x, *y))
+
+  // let line_series = LineSeries::new(
+  //   (-100..100).
+  //     .map(
+  //       |i| (i, i)
+  //     ), &BLUE
+  //   );
+  // chart.draw_series(line_series).unwrap();
+  chart.draw_series(series).unwrap();
 }
 
 fn simulate() {
@@ -127,7 +150,7 @@ fn simulate() {
 
   let mut rng = rand::thread_rng();
   // let final_state = 'G';
-  let max_iter = 100;
+  let max_iter = 20;
   let mut data_points = Vec::new();
 
   for i in 0..max_iter {
@@ -169,7 +192,7 @@ fn simulate() {
       let step_reward = reward_map.get(state).unwrap().clone();
       if step_reward != 0 {
         let triggered_prob = transition_prob.get((state_id, next_action_id.unwrap())).unwrap();
-        let delta = triggered_prob / 2.0;
+        let delta = (step_reward as f32) * triggered_prob / 2.0;
         let delta_rem = delta / ((actions.len() - 1) as f32);
         let mut row = transition_prob.row_mut(state_id);
         for (i, e) in row.indexed_iter_mut() {
@@ -181,8 +204,8 @@ fn simulate() {
         }
 
       }
-      data_points.push((step, step_reward.clone()));
       reward += step_reward;
+      
       println!("step ({}) {} {} = {} | {} ... {}", 
         step, loc[0], loc[1], state, step_reward, reward);
       
@@ -198,6 +221,7 @@ fn simulate() {
         _ => {}
       }
     }
+    data_points.push((step, reward));
 
   }
 
