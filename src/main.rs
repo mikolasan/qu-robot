@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
+use std::hash::Hash;
 use rand::Rng;
 use plotters::{prelude::*, data};
 use ndarray::{array, Array2, Axis};
@@ -52,7 +53,12 @@ fn build_ui(app: &Application) {
 }
 
 // Function to plot the graph using plotters
-fn plot_graph(data_points: Vec<(i32, i32)>) {
+fn plot_graph(
+  data_points_bad: Vec<(i32, i32, i32)>,
+  data_points_good: Vec<(i32, i32, i32)>,
+  max_x: i32,
+  max_y: i32
+) {
   // Create a drawing area with a Cartesian coordinate system
   let root = BitMapBackend::new(
     PLOT_FILE, (800, 600))
@@ -65,7 +71,7 @@ fn plot_graph(data_points: Vec<(i32, i32)>) {
       .margin(5)
       .x_label_area_size(40)
       .y_label_area_size(40)
-      .build_cartesian_2d(0..data_points.len(), 0..200)
+      .build_cartesian_2d(0..max_x, 0..max_y)
       .unwrap();
 
   // Draw the line plot
@@ -76,24 +82,14 @@ fn plot_graph(data_points: Vec<(i32, i32)>) {
       .draw()
       .unwrap();
 
-  // let arr = vec2array(data_points);
-  let series = (0..)
-    .zip(data_points.iter())
+  chart.draw_series(data_points_bad.iter()
     .map(
-      |(x, y)| Circle::new((x, y.0), 3, BLUE.filled())
-    )
-    ;
-
-    // (0..).zip(data.iter()).map(|(x, y)| (x, *y))
-
-  // let line_series = LineSeries::new(
-  //   (-100..100).
-  //     .map(
-  //       |i| (i, i)
-  //     ), &BLUE
-  //   );
-  // chart.draw_series(line_series).unwrap();
-  chart.draw_series(series).unwrap();
+      |(i, s, _)| Circle::new((i.to_owned(), s.to_owned()), 3, BLACK.filled())
+    )).unwrap();
+  chart.draw_series(data_points_good.iter()
+    .map(
+      |(i, s, _)| Circle::new((i.to_owned(), s.to_owned()), 3, BLUE.filled())
+    )).unwrap();
 }
 
 fn simulate() {
@@ -110,12 +106,15 @@ fn simulate() {
     'F',
     'H',
     'G',
+    'W',
   ];
   let mut world: Array2<char> = array![
-    ['S', 'F', 'F', 'F'],
-    ['F', 'H', 'F', 'H'],
-    ['F', 'F', 'F', 'H'],
-    ['H', 'F', 'F', 'G'],
+    ['W', 'W', 'W', 'W', 'W', 'W'],
+    ['W', 'S', 'F', 'F', 'F', 'W'],
+    ['W', 'F', 'H', 'F', 'H', 'W'],
+    ['W', 'F', 'F', 'F', 'H', 'W'],
+    ['W', 'H', 'F', 'F', 'G', 'W'],
+    ['W', 'W', 'W', 'W', 'W', 'W'],
   ];
   world.swap_axes(0, 1);
   let gw = GridWorld::<char>::new(world);
@@ -123,8 +122,9 @@ fn simulate() {
   let reward_map = HashMap::from([
     ('S', 0),
     ('F', 0),
-    ('H', -1),
-    ('G', 1),
+    ('H', -10),
+    ('G', 10),
+    ('W', -1),
   ]);
 
   let mut transition_prob = Array2::<f32>::zeros((states.len(), actions.len()));
@@ -150,12 +150,14 @@ fn simulate() {
 
   let mut rng = rand::thread_rng();
   // let final_state = 'G';
-  let max_iter = 20;
-  let mut data_points = Vec::new();
+  let max_iter = 50;
+  let mut data_points_bad = Vec::new();
+  let mut data_points_good = Vec::new();
+  let mut max_steps = 0;
 
   for i in 0..max_iter {
     println!("--- {} ---", i);
-    let mut loc = [0, 0];
+    let mut loc = [1, 1];
     let mut step = 0;
     let mut reward = 0;
     'steps: loop {
@@ -212,20 +214,23 @@ fn simulate() {
       match state {
         'G' => {
           println!("GOAL!");
+          data_points_good.push((i, step, reward));
           break 'steps;
         },
         'H' => {
           println!(">> HOLE <<");
+          data_points_bad.push((i, step, reward));
           break 'steps;
         },
         _ => {}
       }
     }
-    data_points.push((step, reward));
-
+    if step > max_steps {
+      max_steps = step;
+    }
   }
 
-  plot_graph(data_points);
+  plot_graph(data_points_bad, data_points_good, max_iter, max_steps);
 
 }
 
