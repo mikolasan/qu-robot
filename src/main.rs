@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::hash::Hash;
 use std::io::{Error, Result};
+use std::sync::Mutex;
 
 use frozen_lake::GridPos;
 use rand::Rng;
@@ -188,9 +189,10 @@ fn ui_main() -> glib::ExitCode {
   app.run()
 }
 
-pub trait QLearningWeb {
-  fn env_get_handler(&self) -> impl Responder;
-  fn step_post_handler(&self) -> HttpResponse;
+struct AppState {
+  env: Mutex<FrozenLake>,
+  step: Mutex<i32>,
+  reward: Mutex<i32>,
 }
 
 // Define a struct to represent your data
@@ -205,88 +207,69 @@ struct EnvData {
   meta_state: Vec<char>,
 }
 
-enum Message {
-  Task(Box<FnOnce() + Clone + 'static>),
+async fn env_get_handler(data: web::Data<AppState>) -> impl Responder {
+  let env = data.env.lock().unwrap();
+  let reward = data.reward.lock().unwrap();
+
+  let loc = env.loc();
+  let meta_state = env.create_meta_state(loc);
+  let env_data = EnvData {
+    prev_loc: loc,
+    loc: loc,
+    grid_world: env.grid_world(),
+    total_reward: *reward,
+    step_reward: 0,
+    action_prob: env.action_prob(&meta_state),
+    meta_state: meta_state.to_vec(),
+  };
+  let json_response = serde_json::to_string(&env_data)
+    .expect("Failed to serialize JSON");
+  HttpResponse::Ok()
+    .content_type("application/json")
+    .body(json_response)
 }
 
-impl QLearningWeb for FrozenLake {
-  fn env_get_handler(&self) -> HttpResponse {
-    HttpResponse::Ok()
-    .content_type("application/json")
-    .body("")
-  }
-  fn step_post_handler(&self) -> HttpResponse {
-    HttpResponse::Ok()
-    .content_type("application/json")
-    .body("")
-  }
-}
+async fn step_post_handler(data: web::Data<AppState>) -> impl Responder {
+  let mut env = data.env.lock().unwrap();
+  let mut step = data.step.lock().unwrap();
+  let mut reward = data.reward.lock().unwrap();
 
-// async fn env_get_handler() -> impl Responder {
-//     let data = EnvData {        
-//     };
-//     let json_response = serde_json::to_string(&data)
-//       .expect("Failed to serialize JSON");
-//     HttpResponse::Ok()
-//         .content_type("application/json")
-//         .body(json_response)
-// }
+  let prev_loc = env.loc();
+  let (_, step_reward) = env.step();
+  *step += 1;
+  *reward += step_reward;
+  let loc = env.loc();
+  let meta_state = env.create_meta_state(loc);
+
+  let env_data = EnvData {
+    prev_loc: prev_loc,
+    loc: loc,
+    grid_world: env.grid_world(),
+    total_reward: *reward,
+    step_reward: step_reward,
+    action_prob: env.action_prob(&meta_state),
+    meta_state: meta_state.to_vec(),
+  };
+  let json_response = serde_json::to_string(&env_data)
+    .expect("Failed to serialize JSON");
+  HttpResponse::Ok()
+    .content_type("application/json")
+    .body(json_response)
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-  let mut env = FrozenLake::new();
-  let mut step = 0;
-  let mut reward = 0;
-  let env_get_handler = || {
-    let loc = env.loc();
-    let meta_state = env.create_meta_state(loc);
-    let data = EnvData {
-      prev_loc: loc,
-      loc: loc,
-      grid_world: env.grid_world(),
-      total_reward: reward,
-      step_reward: 0,
-      action_prob: env.action_prob(&meta_state),
-      meta_state: meta_state.to_vec(),
-    };
-    let json_response = serde_json::to_string(&data)
-      .expect("Failed to serialize JSON");
-    HttpResponse::Ok()
-        .content_type("application/json")
-        .body(json_response)
-  };
-
-  let steppost_handler = || {
-    let prev_loc = env.loc();
-    
-    let (state, step_reward) = env.step();
-    step += 1;
-    reward += step_reward;
-    let loc = env.loc();
-    let meta_state = env.create_meta_state(loc);
-
-    let data = EnvData {
-      prev_loc: prev_loc,
-      loc: loc,
-      grid_world: env.grid_world(),
-      total_reward: reward,
-      step_reward: step_reward,
-      action_prob: env.action_prob(&meta_state),
-      meta_state: meta_state.to_vec(),
-    };
-    let json_response = serde_json::to_string(&data)
-      .expect("Failed to serialize JSON");
-    HttpResponse::Ok()
-        .content_type("application/json")
-        .body(json_response)
-  };
-
+  let env = web::Data::new(AppState {
+    env: Mutex::new(FrozenLake::new()),
+    step: Mutex::new(0),
+    reward: Mutex::new(0),
+  });
   // Start the web server
-  HttpServer::new(|| {
+  HttpServer::new(move || {
     App::new()
-      .service(web::resource("/env").route(web::get().to(env.env_get_handler())))
-      // .route("/env", web::get().to(env.env_get_handler()))
-      // .route("/step", web::post().to(env.step_post_handler))
+      .app_data(env.clone())
+      .route("/env", web::get().to(env_get_handler))
+      .route("/step", web::post().to(step_post_handler))
   })
     .bind(("127.0.0.1", 8080))?
     .run()
