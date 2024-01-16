@@ -3,10 +3,10 @@ use std::io::{Error, Result};
 
 use ndarray::{array, Array2};
 use rand::Rng;
-use rsrl::{
-  domains::{Domain, Observation, State, Reward, Action}, 
-  spaces::{discrete::Integers, ProductSpace},
-};
+// use rsrl::{
+//   domains::{Domain, Observation, State, Reward, Action}, 
+//   spaces::{discrete::Integers, ProductSpace},
+// };
 use crate::grid_world::{GridWorld, Motion};
 
 pub(crate) const ACTIONS: [Motion; 4] = [
@@ -215,25 +215,27 @@ impl FrozenLake {
   }
 }
 
+// TODO: insttall openblas
+// https://github.com/blas-lapack-rs/openblas-src
+// https://github.com/Microsoft/vcpkg
 
+// impl Domain for FrozenLake {
+//   type StateSpace = ProductSpace<Integers>;
+//   type ActionSpace = Integers;
 
-impl Domain for FrozenLake {
-  type StateSpace = ProductSpace<Integers>;
-  type ActionSpace = Integers;
+//   fn state_space(&self) -> Self::StateSpace {
+//     todo!()
+//   }
 
-  fn state_space(&self) -> Self::StateSpace {
-    todo!()
-  }
+//   fn action_space(&self) -> Self::ActionSpace {
+//     todo!()
+//   }
 
-  fn action_space(&self) -> Self::ActionSpace {
-    todo!()
-  }
+//   fn emit(&self) -> Observation<State<Self>> {
+//     todo!()
+//   }
 
-  fn emit(&self) -> Observation<State<Self>> {
-    todo!()
-  }
-
-  fn step(&mut self, _a: &Action<Self>) -> (Observation<State<Self>>, Reward) {
-    todo!()
-  }
-}
+//   fn step(&mut self, _a: &Action<Self>) -> (Observation<State<Self>>, Reward) {
+//     todo!()
+//   }
+// }
