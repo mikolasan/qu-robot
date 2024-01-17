@@ -116,7 +116,10 @@ async fn step_post_handler(data: web::Data<AppState>) -> impl Responder {
   let mut reward = data.reward.lock().unwrap();
 
   let prev_loc = env.loc();
+  let prev_meta_state = env.create_meta_state(prev_loc);
+
   let (_, step_reward) = env.step();
+  
   *step += 1;
   *reward += step_reward;
   let loc = env.loc();
@@ -128,7 +131,7 @@ async fn step_post_handler(data: web::Data<AppState>) -> impl Responder {
     grid_world: env.grid_world(),
     total_reward: *reward,
     step_reward: step_reward,
-    action_prob: env.action_prob(&meta_state),
+    action_prob: env.action_prob(&prev_meta_state),
     meta_state: meta_state.to_vec(),
   };
   let json_response = serde_json::to_string(&env_data)

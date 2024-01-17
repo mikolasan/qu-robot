@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::HashMap;
 use std::io::{Error, Result};
 
@@ -21,7 +22,7 @@ const STATES: [char; 5] = [
   'F',
   'H',
   'G',
-  'W',
+  'M',
 ];
 
 // # actions = rows
@@ -63,18 +64,20 @@ pub struct FrozenLake {
   reward_map: RewardMap,
   transition_prob: HashMap<MetaState, PossibleActions>,
   loc: GridPos,
+  step: i32,
   reward: i32,
+  exploration_prob: f64,
 }
 
 impl FrozenLake {
   pub fn new() -> FrozenLake {
     let mut world: Array2<char> = array![
-      ['W', 'W', 'W', 'W', 'W', 'W'],
-      ['W', 'S', 'F', 'F', 'F', 'W'],
-      ['W', 'F', 'H', 'F', 'H', 'W'],
-      ['W', 'F', 'F', 'F', 'H', 'W'],
-      ['W', 'H', 'F', 'F', 'G', 'W'],
-      ['W', 'W', 'W', 'W', 'W', 'W'],
+      ['M', 'M', 'M', 'M', 'M', 'M'],
+      ['M', 'F', 'F', 'F', 'F', 'M'],
+      ['M', 'F', 'H', 'F', 'H', 'M'],
+      ['M', 'F', 'F', 'F', 'H', 'M'],
+      ['M', 'H', 'F', 'F', 'G', 'M'],
+      ['M', 'M', 'M', 'M', 'M', 'M'],
     ];
     world.swap_axes(0, 1);
 
@@ -84,13 +87,15 @@ impl FrozenLake {
       reward_map: HashMap::from([
         ('S', 0),
         ('F', 0),
-        ('H', -10),
-        ('G', 10),
-        ('W', -1),
+        ('H', -1),
+        ('G', 1),
+        ('M', -1),
       ]),
       transition_prob: HashMap::new(),
       loc: [1, 1],
-      reward: 0
+      step: 0,
+      reward: 0,
+      exploration_prob: 0.0,
     }
   }
 
@@ -119,7 +124,7 @@ impl FrozenLake {
   }
 
   pub fn create_meta_state( &self, loc: GridPos) -> MetaState {
-    let mut meta_state: MetaState = ['_'; 5];
+    let mut meta_state: MetaState = ['?'; 5];
     let moves: [[i32; 2]; 5] = [
       [0, 0],
       [-1, 0],
@@ -148,69 +153,86 @@ impl FrozenLake {
   }
 
   pub fn step(&mut self) -> (char, i32) {
-    let meta_state = self.create_meta_state(self.loc);
-      
-    // find id for the state
-    // let state_id = states.iter().position(|&c| c == current_state).unwrap();
     let mut rng = rand::thread_rng();
 
+    let min_exploration_prob: f64 = 0.01;
+    let exploration_decay: f64 = 0.001;
+    let new_decay = f64::powf(std::f64::consts::E, -exploration_decay * (self.step as f64));
+    self.exploration_prob = min_exploration_prob.max(new_decay); // but not lower than `min_exploration_prob`
+    println!("set new exploration prob {}", self.exploration_prob);
+
+    let meta_state = self.create_meta_state(self.loc);
     let mut next_action_id = None;
-    if let Some(state_probs) = self.transition_prob.get(&meta_state) {
-      let p: f32 = rng.gen();
+    let test_probs = self.transition_prob.get(&meta_state);
+    if test_probs.is_none() {
+      let even_spread: [f32; 4] = [1.0 / (ACTIONS.len() as f32); 4];
+      self.transition_prob.insert(meta_state, even_spread);
+    }
+    let mut state_probs = self.transition_prob.get_mut(&meta_state).unwrap();
+    let p: f64 = rng.gen::<f64>();
+    if p < self.exploration_prob {
       let mut cumulative_prob = 0.0;
+      let p: f32 = rng.gen::<f32>();
       for (i, &weight) in state_probs.iter().enumerate() {
         cumulative_prob += weight;
         if p <= cumulative_prob {
           next_action_id = Some(i);
+          println!("random exploration: {}", i);
           break;
         }
       }
     } else {
-      let p = 1.0 / (ACTIONS.len() as f32);
-      let mut even_spread: [f32; 4] = [p; 4];
-      // for e in even_spread.iter_mut() {
-      //   *e = p;
-      // }
-      self.transition_prob.insert(meta_state, even_spread);
-      next_action_id = Some(rng.gen_range(0..ACTIONS.len()));
+      next_action_id = state_probs
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.total_cmp(b))
+        .map(|(index, _)| index);
+      println!("exploitation: {}", next_action_id.unwrap());
     }
-    match next_action_id {
-      Some(action) => {
-        println!("Randomly selected action: {}", action);
-      }
-      None => {
-        println!("No action selected. Check your weights.");
-      }
-    }
-    let random_action = ACTIONS[next_action_id.unwrap()];
-
+    
+    let action_id = next_action_id.expect("failed exploration");
+    let random_action = ACTIONS[action_id];
     let new_loc = self.grid_world.perform_motion(self.loc, random_action);
+
     let state: &char = self.grid_world.get(new_loc).unwrap();
-    if state == &'W' {
+    if state == &'M' {
       println!("This move is not allowed (-> W), keeping last position");
     } else {
       self.loc = new_loc;
     }
+
+    let discount: f32 = 0.99;
+    let learning_rate: f32 = 0.1;
+    
     let step_reward = self.reward_map.get(state).unwrap().to_owned();
     if step_reward != 0 {
-      if let Some(state_probs) = self.transition_prob.get_mut(&meta_state) {
-        let triggered_prob = state_probs[next_action_id.unwrap()];  
-        let delta = (step_reward as f32) * triggered_prob / 2.0;
-        let delta_rem = delta / ((ACTIONS.len() - 1) as f32);
-        for (i, e) in state_probs.iter_mut().enumerate() {
-          if i == next_action_id.unwrap() {
-            *e += delta;
-          } else {
-            *e -= delta_rem;
-          }
+      let triggered_prob = state_probs[action_id];
+      let max_prob = state_probs
+        .iter()
+        .max_by(|a, b| a.total_cmp(b))
+        .unwrap()
+        .to_owned();
+      // let new_q = (1.0 - learning_rate) * triggered_prob + learning_rate * ((step_reward as f32) + discount * max_prob);
+      let mut delta = learning_rate * (step_reward as f32) * discount;
+      let mut delta_rem = delta / ((ACTIONS.len() - 1) as f32);
+      let mut new_q = triggered_prob + delta;
+      if new_q > 1.0 {
+        new_q = 1.0;
+        delta = 1.0 - triggered_prob;
+        delta_rem = delta / ((ACTIONS.len() - 1) as f32);
+      }
+      for (i, e) in state_probs.iter_mut().enumerate() {
+        if i == next_action_id.unwrap() {
+          *e += delta;
+        } else {
+          *e -= delta_rem;
         }
-      } else {
-        println!("meta state disappeared :O");
       }
     } else {
       println!("no reward = no prob updates");
     }
     self.reward += step_reward;
+    self.step += 1;
     (state.to_owned(), step_reward)
   }
 }
