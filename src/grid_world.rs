@@ -136,24 +136,24 @@ impl<T> GridWorld<T> {
         ]
     }
 
-    pub fn perform_motion(&self, loc: [usize; 2], motion: Motion) -> [usize; 2] {
+    pub fn perform_motion(&self, loc: &[usize; 2], motion: Motion) -> [usize; 2] {
         match motion {
-            Motion::North(n) => self.move_north(loc, n),
-            Motion::South(n) => self.move_south(loc, n),
-            Motion::East(n) => self.move_east(loc, n),
-            Motion::West(n) => self.move_west(loc, n),
+            Motion::North(n) => self.move_north(*loc, n),
+            Motion::South(n) => self.move_south(*loc, n),
+            Motion::East(n) => self.move_east(*loc, n),
+            Motion::West(n) => self.move_west(*loc, n),
 
-            Motion::NorthEast(n) => (0..n).fold(loc, |new_loc, _| {
+            Motion::NorthEast(n) => (0..n).fold(*loc, |new_loc, _| {
                 self.move_east(self.move_north(new_loc, 1), 1)
             }),
-            Motion::NorthWest(n) => (0..n).fold(loc, |new_loc, _| {
+            Motion::NorthWest(n) => (0..n).fold(*loc, |new_loc, _| {
                 self.move_west(self.move_north(new_loc, 1), 1)
             }),
 
-            Motion::SouthEast(n) => (0..n).fold(loc, |new_loc, _| {
+            Motion::SouthEast(n) => (0..n).fold(*loc, |new_loc, _| {
                 self.move_east(self.move_south(new_loc, 1), 1)
             }),
-            Motion::SouthWest(n) => (0..n).fold(loc, |new_loc, _| {
+            Motion::SouthWest(n) => (0..n).fold(*loc, |new_loc, _| {
                 self.move_west(self.move_south(new_loc, 1), 1)
             }),
         }

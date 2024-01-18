@@ -79,9 +79,9 @@ struct AppState {
 // Define a struct to represent your data
 #[derive(Serialize, Deserialize)]
 struct EnvData {
-  prev_loc: GridPos,
   loc: GridPos,
   grid_world: Vec<Vec<char>>,
+  probs: Vec<Vec<Vec<f32>>>,
   total_reward: i32,
   step_reward: i32,
   action_prob: Vec<f32>,
@@ -95,9 +95,9 @@ async fn env_get_handler(data: web::Data<AppState>) -> impl Responder {
   let loc = env.loc();
   let meta_state = env.create_meta_state(loc);
   let env_data = EnvData {
-    prev_loc: loc,
-    loc: loc,
+    loc: *loc,
     grid_world: env.grid_world(),
+    probs: env.probs(),
     total_reward: *reward,
     step_reward: 0,
     action_prob: env.action_prob(&meta_state),
@@ -126,9 +126,9 @@ async fn step_post_handler(data: web::Data<AppState>) -> impl Responder {
   let meta_state = env.create_meta_state(loc);
 
   let env_data = EnvData {
-    prev_loc: prev_loc,
-    loc: loc,
+    loc: *loc,
     grid_world: env.grid_world(),
+    probs: env.probs(),
     total_reward: *reward,
     step_reward: step_reward,
     action_prob: env.action_prob(&prev_meta_state),
@@ -139,6 +139,22 @@ async fn step_post_handler(data: web::Data<AppState>) -> impl Responder {
   HttpResponse::Ok()
     .content_type("application/json")
     .body(json_response)
+}
+
+#[derive(Deserialize)]
+struct MoveData {
+  x: usize,
+  y: usize,
+}
+
+async fn move_post_handler(data: web::Data<AppState>, move_data: web::Json<MoveData>) -> impl Responder {
+  let mut env = data.env.lock().unwrap();
+  let loc = env.loc_mut();
+  loc[0] = move_data.x;
+  loc[1] = move_data.y;
+  HttpResponse::Ok()
+    .content_type("application/json")
+    .body("GOOD")
 }
 
 #[actix_web::main]
@@ -154,6 +170,7 @@ async fn main() -> std::io::Result<()> {
       .app_data(env.clone())
       .route("/env", web::get().to(env_get_handler))
       .route("/step", web::post().to(step_post_handler))
+      .route("/move", web::post().to(move_post_handler))
   })
     .bind(("127.0.0.1", 8080))?
     .run()
