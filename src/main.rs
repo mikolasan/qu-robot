@@ -11,6 +11,7 @@ use ndarray::{array, Array2, Axis};
 use actix_web::{web, App, HttpServer, HttpResponse, Responder};
 use serde::{Serialize, Deserialize};
 
+mod ann;
 mod frozen_lake;
 mod grid_world;
 // mod window;
