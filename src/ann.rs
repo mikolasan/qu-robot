@@ -7,8 +7,20 @@ fn sigmoid(x: f32) -> f32 {
   1.0 / (1.0 + (-x).exp())
 }
 
+fn d_sigmoid(x: f32) -> f32 {
+  x * (1.0 - x)
+}
+
 fn relu(x: f32) -> f32 {
   x.max(0.0)
+}
+
+fn d_relu(x: f32) -> f32 {
+  if x > 0.0 {
+    1.0
+  } else {
+    0.1
+  }
 }
 
 pub struct ANN {
@@ -21,10 +33,7 @@ pub struct ANN {
 }
 
 impl ANN {
-  pub fn new() -> ANN {
-    let learning_rate = 0.1;
-    let n_neurons_per_layer = [2, 2, 1];
-
+  pub fn new(n_neurons_per_layer: [usize; 3]) -> ANN {
     let w1 = Array2::random((n_neurons_per_layer[0], n_neurons_per_layer[1]), StandardNormal) * 0.1;
     let mut w2 = Array2::random((n_neurons_per_layer[1], n_neurons_per_layer[2]), StandardNormal) * 0.1;
     w2.swap_axes(0, 1); // special case for 1-D matrix and dot implementation in ndarray
@@ -42,6 +51,30 @@ impl ANN {
     }
   }
 
+  pub fn back_prop_layer_2(&mut self, y1: ArrayView1<f32>, y2: f32, y: f32) -> f32 {
+    let diff = y - y2;
+    let grad_2 = d_relu(y2); // d_sigmoid(y2);
+    let d_2: f32 = diff * grad_2;
+    self.bias_2 = &self.bias_2 + d_2 * self.learning_rate;
+    
+    let dw2: Array1<f32> = d_2 * &y1;
+    self.weights_2 = &self.weights_2 + &dw2 * self.learning_rate;
+
+    d_2
+  }
+
+  pub fn back_prop_layer_1(&mut self, y1: ArrayView1<f32>, d2: f32, x: ArrayView1<f32>) {
+    let i2: Array1<f32> = Array1::ones(y1.raw_dim());
+    let grad_1: Array1<f32> = &y1 * (&i2 - &y1); // sigmoid derivative
+    // let w2: ArrayView1<f32> = self.weights_2.index_axis(Axis(0), 0);
+    let d_1: Array2<f32> = d2 * &grad_1 * &self.weights_2;
+    self.bias_1 = &self.bias_1 + &d_1.index_axis(Axis(0), 0) * self.learning_rate;
+    
+    // let d_1_t: ArrayView2<f32> = d_1.insert_axis(Axis(0)).t(); // shape 2,1
+    let dw1: Array2<f32> = &d_1.t() * &x;
+    self.weights_1 = &self.weights_1 + &dw1 * self.learning_rate;
+  }
+
   pub fn train(&mut self, epochs: i32, inputs: Array2<f32>, outputs: Array1<f32>) {
     println!("Training started >>>>>>");
     for _ in 0..epochs {
@@ -56,42 +89,53 @@ impl ANN {
         let y_2: Array1<f32> = self.forward_layer_2(y_1.view());
         let y_: f32 = y_2.get(0).unwrap().to_owned();
 
-        let diff = y - y_;
-        let grad_2 = 1.0; // y_ * (1.0 - y_); // sigmoid derivative
-        let d_2: f32 = diff * grad_2;
-        let dw2: Array1<f32> = &y_1 * d_2;
+        // let diff = y - y_;
+        // let grad_2 = 1.0; // y_ * (1.0 - y_); // sigmoid derivative
+        // let d_2: f32 = diff * grad_2;
+        // let dw2: Array1<f32> = &y_1 * d_2;
         
-        self.weights_2 = &self.weights_2 + &dw2 * self.learning_rate;
-        self.bias_2 = &self.bias_2 + d_2 * self.learning_rate;
+        // self.weights_2 = &self.weights_2 + &dw2 * self.learning_rate;
+        // self.bias_2 = &self.bias_2 + d_2 * self.learning_rate;
+        
+        let d_2: f32 = self.back_prop_layer_2(y_1.view(), y_, *y);
 
-        let i2: Array1<f32> = Array1::ones(y_1.raw_dim());
-        let grad_1: Array1<f32> = &y_1 * (&i2 - &y_1); // sigmoid derivative
-        let w2 = self.weights_2.clone();
-        let d_1: Array1<f32> = w2.remove_axis(Axis(0)) * d_2 * &grad_1;
-        self.bias_1 = &self.bias_1 + &d_1 * self.learning_rate;
-        let d_1_t: Array2<f32> = d_1.insert_axis(Axis(0)); // shape 2,1
-        let dw1: Array2<f32> = &d_1_t.t() * &x;
-        self.weights_1 = &self.weights_1 + &dw1 * self.learning_rate;
+        // let i2: Array1<f32> = Array1::ones(y_1.raw_dim());
+        // let grad_1: Array1<f32> = &y_1 * (&i2 - &y_1); // sigmoid derivative
+        // let w2 = self.weights_2.clone();
+        // let d_1: Array1<f32> = w2.remove_axis(Axis(0)) * d_2 * &grad_1;
+        // self.bias_1 = &self.bias_1 + &d_1 * self.learning_rate;
+        // let d_1_t: Array2<f32> = d_1.insert_axis(Axis(0)); // shape 2,1
+        // let dw1: Array2<f32> = &d_1_t.t() * &x;
+        // self.weights_1 = &self.weights_1 + &dw1 * self.learning_rate;
+
+        self.back_prop_layer_1(y_1.view(), d_2, x);
       }
     }
   }
 
-  fn forward_layer_1(&self, x: ArrayView1<f32>) -> Array1<f32> {
+  pub fn forward_layer_1(&self, x: ArrayView1<f32>) -> Array1<f32> {
     let y_1: Array1<f32> = self.weights_1.dot(&x) + &self.bias_1;
     y_1.mapv(sigmoid)
   }
 
-  fn forward_layer_2(&self, y: ArrayView1<f32>) -> Array1<f32> {
+  pub fn forward_layer_2(&self, y: ArrayView1<f32>) -> Array1<f32> {
     let y_2: Array1<f32> = self.weights_2.dot(&y) + &self.bias_2;
     y_2.mapv(relu)
   }
 
-  fn forward(&self, x: ArrayView1<f32>) -> f32 {
+  pub fn forward(&self, x: ArrayView1<f32>) -> f32 {
     let mut y_1: Array1<f32> = self.weights_1.dot(&x) + &self.bias_1;
     y_1 = y_1.mapv(sigmoid);
     let mut y_2: Array1<f32> = self.weights_2.dot(&y_1) + &self.bias_2;
     y_2 = y_2.mapv(relu);
     y_2.get(0).unwrap().to_owned()
+  }
+
+  pub fn print(&self) {
+    println!("weights 1: {:?}", self.weights_1);
+    println!("bias 1: {:?}", self.bias_1);
+    println!("weights 2: {:?}", self.weights_2);
+    println!("bias 2: {:?}", self.bias_2);
   }
 
 }
@@ -122,9 +166,12 @@ mod tests {
   #[test]
   fn simplify_weights_2() {
     let w: Array2<f32> = arr2(&[[1.0, 2.0]]); // shape = 1,2
-    let ww: Array1<f32> = w.remove_axis(Axis(0));
+    let ww: Array1<f32> = w.clone().remove_axis(Axis(0));
     let w_: Array1<f32> = arr1(&[1.0, 2.0]);
     assert!(ww == w_, "ww = {}, w_ = {}", ww, w_);
+
+    let www: ArrayView1<f32> = w.index_axis(Axis(0), 0);
+    assert!(www == w_, "www = {}, w_ = {}", www, w_);
   }
 
   #[test]
@@ -207,7 +254,7 @@ mod tests {
 
   #[test]
   fn forward_layer_1() {
-    let mut network = ANN::new();
+    let mut network = ANN::new([2, 2, 1]);
     network.weights_1 = arr2(&[
       [-0.5, -0.5],
       [-0.5, -0.5],
@@ -222,7 +269,7 @@ mod tests {
 
   #[test]
   fn forward_layer_2() {
-    let mut network = ANN::new();
+    let mut network = ANN::new([2, 2, 1]);
     network.weights_2 = arr2(&[[1.0, 1.0]]);
     
     let e = 1.0 / (1.0 + E);
@@ -235,7 +282,7 @@ mod tests {
 
   #[test]
   fn xor_forward_pretrained() {
-    let mut network = ANN::new();
+    let mut network = ANN::new([2, 2, 1]);
     network.weights_1 = arr2(&[
       [2.27, -2.23],
       [-2.698, 2.64],
@@ -266,7 +313,7 @@ mod tests {
   }
 
   #[test]
-  fn back_prop_later_2() {
+  fn back_prop_layer_2_matrices() {
     // self.weights_2 += &dw2 * self.learning_rate;
     
     let w: Array2<f32> = arr2(&[[3.0, 5.0]]); // shape = 1,2
@@ -290,14 +337,58 @@ mod tests {
   }
 
   #[test]
-  fn fn_back_prop_layer_1() {
+  fn back_prop_layer_2() {
+    let mut network = ANN::new([2, 2, 1]);
+    network.weights_2 = arr2(&[[0.0, 0.0]]);
+    network.bias_2 = arr1(&[0.0]);
+
+    // let y1: Array1<f32> = arr1(&[1.0, 1.0]);
+    // let y2 = 1.0;
+    // let y = 1.0;
+    // let d2 = network.back_prop_layer_2(y1.view(), y2, y);
+
+    // assert!(network.bias_2 == arr1(&[0.0]), "bias 2 = {}", network.bias_2);
+    // assert!(network.weights_2 == arr2(&[[0.0, 0.0]]), "weight 2 = {}", network.weights_2);
+    // assert!(d2 == 0.0, "d2 = {}", d2);
+
+    let y1: Array1<f32> = arr1(&[1.0, 2.0]);
+    let y2 = 0.5;
+    let y = 1.0;
+    let d2 = network.back_prop_layer_2(y1.view(), y2, y);
+
+    assert!(network.bias_2 == arr1(&[0.05]), "bias 2 = {}", network.bias_2);
+    assert!(network.weights_2 == arr2(&[[0.05, 0.1]]), "weight 2 = {}", network.weights_2);
+    assert!(d2 == 0.5, "d2 = {}", d2);
+  }
+
+  #[test]
+  fn back_prop_layer_1() {
+    let mut network = ANN::new([2, 2, 1]);
+    network.weights_1 = arr2(&[
+      [0.0, 0.0],
+      [0.0, 0.0],
+    ]);
+    network.bias_1 = arr1(&[0.0, 0.0]);
+    network.weights_2 = arr2(&[[4.0, -1.0]]);
+
+    let y1: Array1<f32> = arr1(&[0.5, 2.0]);
+    let d2 = 1.0;
+    let x: Array1<f32> = arr1(&[1.0, 3.0]);
+    network.back_prop_layer_1(y1.view(), d2, x.view());
+
+    assert!(network.bias_1 == arr1(&[0.1, 0.2]), "bias 1 = {}", network.bias_1);
+    assert!(network.weights_1 == arr2(&[[0.1, 0.3], [0.2, 0.6]]), "weight 1 = {}", network.weights_1);
+  }
+
+  #[test]
+  fn back_prop_layer_1_matrices() {
     // let d_1 = (&self.weights_2 * &d_2) * grad_1;
     let x: Array1<f32> = arr1(&[1.0, 2.0]);
-    println!("Original 1D array: {:?}", x);
+    // println!("Original 1D array: {:?}", x);
     let d: Array1<f32> = arr1(&[3.0, 5.0]);
     let mut x_: Array2<f32> = x.clone().insert_axis(Axis(0));
-    println!("Converted 2D array: {:?}", x_);
-    println!("Transposed 2D array: {:?}", x_.t());
+    // println!("Converted 2D array: {:?}", x_);
+    // println!("Transposed 2D array: {:?}", x_.t());
     let x_t = x_.t();
     // let y: Array2<f32> = &x_t * &d;
     let y: Array2<f32> = &d * &x_t;
@@ -313,12 +404,12 @@ mod tests {
       [3.0, 5.0],
       [6.0, 10.0],
     ]);
-    assert!(yy == yy_.t(), "yy = {}, yy_ = {}", yy, yy_.t());
+    assert!(yy == &yy_.t() * 2.0, "yy = {}", yy);
   }
 
   #[test]
   fn xor_train() {
-    let mut network = ANN::new();
+    let mut network = ANN::new([2, 2, 1]);
     let epochs = 3000;
     let inputs: Array2<f32> = arr2(&[
       [0.0, 0.0],

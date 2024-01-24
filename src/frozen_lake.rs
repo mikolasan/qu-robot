@@ -2,13 +2,17 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::io::{Error, Result};
 
+use ndarray::prelude::*;
 use ndarray::{array, Array2};
 use rand::Rng;
 // use rsrl::{
 //   domains::{Domain, Observation, State, Reward, Action}, 
 //   spaces::{discrete::Integers, ProductSpace},
 // };
-use crate::grid_world::{GridWorld, Motion};
+use crate::{
+  ann::ANN,
+  grid_world::{GridWorld, Motion},
+};
 
 pub(crate) const ACTIONS: [Motion; 4] = [
   Motion::North(1),
@@ -305,6 +309,22 @@ impl FrozenLake {
     
     step_result
   }
+
+  pub fn train(&mut self) {
+    let mut network = ANN::new([3, 4, 4]);
+    let epochs = 3000;
+    let inputs: Array2<f32> = arr2(&[
+      // reward, 
+      [0.0, 0.0],
+      [0.0, 1.0],
+      [1.0, 0.0],
+      [1.0, 1.0]
+    ]);
+    let outputs: Array1<f32> = arr1(&[0.0, 1.0, 1.0, 0.0]);
+    network.train(epochs, inputs, outputs);
+    network.print();
+  }
+
 }
 
 // TODO: insttall openblas
@@ -331,3 +351,14 @@ impl FrozenLake {
 //     todo!()
 //   }
 // }
+
+#[cfg(test)]
+mod tests {
+  use super::FrozenLake;
+
+  #[test]
+  fn train_rl() {
+    let mut env = FrozenLake::new();
+    env.train();
+  }
+}
