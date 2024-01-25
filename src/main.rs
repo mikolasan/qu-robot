@@ -37,18 +37,18 @@ fn simulate() {
   for i in 0..max_iter {
     println!("--- {} ---", i);
     let mut step = 0;
-    let mut reward = 0;
+    let mut reward = 0.0;
     'steps: loop {
       step += 1;
 
-      let (state, step_reward) = env.step();
+      let (prev_state, action, step_reward, state) = env.step();
       reward += step_reward;
       // let random_action = actions[p];
       // let current_state = gw.get(loc).unwrap().to_owned();
       println!("step ({}) {} {} | {} ... {}", 
         step, env.loc()[0], env.loc()[1], step_reward, reward);
       
-      match state {
+      match state[0] {
         'G' => {
           println!("GOAL!");
           data_points_good.push((i, step, reward));
@@ -74,7 +74,7 @@ fn simulate() {
 struct AppState {
   env: Mutex<FrozenLake>,
   step: Mutex<i32>,
-  reward: Mutex<i32>,
+  reward: Mutex<f32>,
 }
 
 // Define a struct to represent your data
@@ -83,8 +83,8 @@ struct EnvData {
   loc: GridPos,
   grid_world: Vec<Vec<char>>,
   probs: Vec<Vec<Vec<f32>>>,
-  total_reward: i32,
-  step_reward: i32,
+  total_reward: f32,
+  step_reward: f32,
   action_prob: Vec<f32>,
   meta_state: Vec<char>,
 }
@@ -100,7 +100,7 @@ async fn env_get_handler(data: web::Data<AppState>) -> impl Responder {
     grid_world: env.grid_world(),
     probs: env.probs(),
     total_reward: *reward,
-    step_reward: 0,
+    step_reward: 0.0,
     action_prob: env.action_prob(&meta_state),
     meta_state: meta_state.to_vec(),
   };
@@ -119,7 +119,7 @@ async fn step_post_handler(data: web::Data<AppState>) -> impl Responder {
   let prev_loc = env.loc();
   let prev_meta_state = env.create_meta_state(prev_loc);
 
-  let (_, step_reward) = env.step();
+  let (_, _, step_reward, _) = env.step();
   
   *step += 1;
   *reward += step_reward;
@@ -163,7 +163,7 @@ async fn main() -> std::io::Result<()> {
   let env = web::Data::new(AppState {
     env: Mutex::new(FrozenLake::new()),
     step: Mutex::new(0),
-    reward: Mutex::new(0),
+    reward: Mutex::new(0.0),
   });
   // Start the web server
   HttpServer::new(move || {

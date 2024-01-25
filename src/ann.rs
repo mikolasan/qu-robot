@@ -123,12 +123,12 @@ impl ANN {
     y_2.mapv(relu)
   }
 
-  pub fn forward(&self, x: ArrayView1<f32>) -> f32 {
+  pub fn forward(&self, x: ArrayView1<f32>) -> Array1<f32> {
     let mut y_1: Array1<f32> = self.weights_1.dot(&x) + &self.bias_1;
     y_1 = y_1.mapv(sigmoid);
     let mut y_2: Array1<f32> = self.weights_2.dot(&y_1) + &self.bias_2;
     y_2 = y_2.mapv(relu);
-    y_2.get(0).unwrap().to_owned()
+    y_2
   }
 
   pub fn print(&self) {
@@ -148,6 +148,11 @@ mod tests {
   use ndarray::{arr1, arr2, Array1, Array2};
 
   use super::ANN;
+
+  fn take_first(a: Array1<f32>) -> f32 {
+    // y_2.get(0).unwrap().to_owned()
+    a.to_vec().first().unwrap().clone()
+  }
 
   #[test]
   fn hadamard_product() {
@@ -292,22 +297,22 @@ mod tests {
     network.bias_2 = arr1(&[-0.812]);
 
     let x_1 = arr1(&[0.0, 0.0]);
-    let y_1 = network.forward(x_1.view());
+    let y_1 = take_first(network.forward(x_1.view()));
     let y_1_ = 0.0;
     assert!(y_1.round() == y_1_, "(1) y = {}, y_ = {}", y_1, y_1_);
     
     let x_2 = arr1(&[1.0, 0.0]);
-    let y_2 = network.forward(x_2.view());
+    let y_2 = take_first(network.forward(x_2.view()));
     let y_2_ = 1.0;
     assert!(y_2.round() == y_2_, "(1) y = {}, y_ = {}", y_2, y_2_);
 
     let x_3 = arr1(&[0.0, 1.0]);
-    let y_3 = network.forward(x_3.view());
+    let y_3 = take_first(network.forward(x_3.view()));
     let y_3_ = 1.0;
     assert!(y_3.round() == y_3_, "(1) y = {}, y_ = {}", y_3, y_3_);
 
     let x_4 = arr1(&[1.0, 1.0]);
-    let y_4 = network.forward(x_4.view());
+    let y_4 = take_first(network.forward(x_4.view()));
     let y_4_ = 0.0;
     assert!(y_4.round() == y_4_, "(1) y = {}, y_ = {}", y_4, y_4_);
   }
@@ -426,22 +431,22 @@ mod tests {
     println!("bias 2: {:?}", network.bias_2);
 
     let x_1 = arr1(&[0.0, 0.0]);
-    let y_1 = network.forward(x_1.view());
+    let y_1 = take_first(network.forward(x_1.view()));
     let y_1_ = 0.0;
     assert!(y_1.round() == y_1_, "(1) y = {}, y_ = {}", y_1, y_1_);
     
     let x_2 = arr1(&[1.0, 0.0]);
-    let y_2 = network.forward(x_2.view());
+    let y_2 = take_first(network.forward(x_2.view()));
     let y_2_ = 1.0;
     assert!(y_2.round() == y_2_, "(1) y = {}, y_ = {}", y_2, y_2_);
 
     let x_3 = arr1(&[0.0, 1.0]);
-    let y_3 = network.forward(x_3.view());
+    let y_3 = take_first(network.forward(x_3.view()));
     let y_3_ = 1.0;
     assert!(y_3.round() == y_3_, "(1) y = {}, y_ = {}", y_3, y_3_);
 
     let x_4 = arr1(&[1.0, 1.0]);
-    let y_4 = network.forward(x_4.view());
+    let y_4 = take_first(network.forward(x_4.view()));
     let y_4_ = 0.0;
     assert!(y_4.round() == y_4_, "(1) y = {}, y_ = {}", y_4, y_4_);
   }

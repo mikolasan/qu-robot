@@ -45,9 +45,9 @@ const STATES: [char; 5] = [
 // }
 
 pub type GridPos = [usize; 2];
-type MetaState = [char; 5];
+pub type MetaState = [char; 5];
 type PossibleActions = [f32; 4];
-type RewardMap = HashMap<char, i32>;
+type RewardMap = HashMap<char, f32>;
 
 fn near_location(loc: &GridPos, mov: [i32; 2]) -> Result<GridPos> {
   let x = mov[0] + loc[0] as i32;
@@ -73,7 +73,7 @@ pub struct FrozenLake {
   transition_prob: HashMap<MetaState, PossibleActions>,
   loc: GridPos,
   step: i32,
-  reward: i32,
+  reward: f32,
   exploration_prob: f64,
 }
 
@@ -93,16 +93,16 @@ impl FrozenLake {
       // world: world,
       grid_world: GridWorld::<char>::new(world),
       reward_map: HashMap::from([
-        ('S', 0),
-        ('F', 0),
-        ('H', -1),
-        ('G', 1),
-        ('M', -1),
+        ('S', 0.0),
+        ('F', 0.0),
+        ('H', -1.0),
+        ('G', 1.0),
+        ('M', -1.0),
       ]),
       transition_prob: HashMap::new(),
       loc: [1, 1],
       step: 0,
-      reward: 0,
+      reward: 0.0,
       exploration_prob: 0.0,
     }
   }
@@ -163,14 +163,14 @@ impl FrozenLake {
   
         let state = self.grid_world.get(new_loc).unwrap();
         let r = self.reward_map.get(state).unwrap().to_owned();
-        if r != 0 {
+        if r != 0.0 {
           meta_state[i] = state.to_owned();
         }
       } else {
         // TODO: need to avoid this situation (don't go into walls, for example)
         let state = self.grid_world.get(*loc).unwrap();
         let r = self.reward_map.get(state).unwrap().to_owned();
-        if r != 0 {
+        if r != 0.0 {
           meta_state[i] = state.to_owned();
         }
       }
@@ -197,6 +197,13 @@ impl FrozenLake {
       .enumerate()
       .max_by(|(_, a), (_, b)| a.total_cmp(b))
       .map(|(index, _)| index)
+  }
+
+  pub fn find_q_max(&mut self, next_state: &MetaState) -> f32 {
+    let next_action_id = self.next_action_max(next_state).unwrap();
+    let next_state_probs = self.transition_prob.get(next_state).unwrap().clone();
+    let max_prob = next_state_probs[next_action_id];
+    max_prob
   }
 
   pub fn find_next_action(&mut self, state: &MetaState) -> Option<usize> {
@@ -290,7 +297,8 @@ impl FrozenLake {
     // }
   }
 
-  pub fn step(&mut self) -> (char, i32) {
+  // returns: state, action, reward, next_state
+  pub fn step(&mut self) -> (MetaState, usize, f32, MetaState) {
     self.update_exploration_prob();
 
     let state = self.create_meta_state(self.loc());
@@ -298,31 +306,30 @@ impl FrozenLake {
     
     let (next_state_sym, next_loc) = self.make_action(self.loc(), action_id);
     let reward = self.reward_map.get(next_state_sym).unwrap().to_owned();
-    let step_result = (next_state_sym.to_owned(), reward);
     let next_state = self.create_meta_state(&next_loc);
+    let step_result = (state, action_id, reward, next_state);
     let next_action_id = self.next_action_max(&next_state).expect("failed next max action");
     
     self.loc = next_loc;
     self.reward += reward;
     self.step += 1;
-    self.update_probs(&state, action_id, reward as f32, &next_state, next_action_id);
+    self.update_probs(&state, action_id, reward, &next_state, next_action_id);
     
     step_result
   }
 
   pub fn train(&mut self) {
-    let mut network = ANN::new([3, 4, 4]);
-    let epochs = 3000;
-    let inputs: Array2<f32> = arr2(&[
-      // reward, 
-      [0.0, 0.0],
-      [0.0, 1.0],
-      [1.0, 0.0],
-      [1.0, 1.0]
-    ]);
-    let outputs: Array1<f32> = arr1(&[0.0, 1.0, 1.0, 0.0]);
-    network.train(epochs, inputs, outputs);
-    network.print();
+    // let mut network = ANN::new([15, 20, 4]);
+    // let epochs = 3000;
+    // let inputs: Array2<f32> = arr2(&[
+    //   [0.0, 0.0],
+    //   [0.0, 1.0],
+    //   [1.0, 0.0],
+    //   [1.0, 1.0]
+    // ]);
+    // let outputs: Array2<f32> = arr1(&[0.0, 1.0, 1.0, 0.0]);
+    // network.train(epochs, inputs, outputs);
+    // network.print();
   }
 
 }
@@ -354,11 +361,99 @@ impl FrozenLake {
 
 #[cfg(test)]
 mod tests {
-  use super::FrozenLake;
+  use ndarray::{Array1, Array2};
+  use super::{FrozenLake, MetaState, ACTIONS, STATES};
+  
+  // meta state -> one hot encoding
+  fn action_one_hot_encoding(action: usize) -> Vec<f32> {
+    let mut action_encoded = vec![0.0; ACTIONS.len()];
+    if action < ACTIONS.len() {
+      action_encoded[action] = 1.0;
+    }
+    action_encoded
+  }
+
+  // meta state -> one hot encoding
+  fn meta_state_one_hot_encoding(meta_state: &[char; 5]) -> Vec<f32> {
+    let state_ids = meta_state.map(
+      |c| STATES.iter().position(|&r| r == c).unwrap_or(STATES.len())
+    );
+    let mut code: Vec<f32> = Vec::new();
+    for state_id in state_ids.iter() {
+      let mut state_encoded = vec![0.0; STATES.len()];
+      if *state_id < STATES.len() {
+        state_encoded[*state_id] = 1.0;
+      }
+      code.append(&mut state_encoded);
+    }
+    code
+  }
+
+  fn encode(
+    state: &MetaState, 
+    action: usize, 
+    reward: f32, 
+    next_state: &MetaState) -> Array1<f32>
+  {
+    let mut transition: Vec<f32> = Vec::new();
+    transition.append(&mut meta_state_one_hot_encoding(&state));
+    transition.append(&mut action_one_hot_encoding(action));
+    transition.push(reward);
+    transition.append(&mut meta_state_one_hot_encoding(&next_state));
+
+    Array1::from_vec(transition)
+  }
 
   #[test]
   fn train_rl() {
     let mut env = FrozenLake::new();
-    env.train();
+
+    let mut replay: Vec<Array1<f32>> = Vec::new();
+    let mut outputs: Vec<f32> = Vec::new();
+    // make a batch
+    // env.train();
+    let max_iter = 50;
+    for i in 0..max_iter {
+      'steps: loop {
+        let (state, action, reward, next_state) = env.step();
+        println!("step {:?} [{}] ({}) -> {:?}", 
+          state, action, reward, next_state);
+        let transition = encode(&state, action, reward, &next_state);
+        println!("transition {:?}", transition); // 55 length
+        replay.push(transition);
+        
+        match next_state[0] {
+          'G' => {
+            outputs.push(reward);
+            println!("output {:?}", outputs.last().unwrap());
+            break 'steps;
+          },
+          'H' => {
+            outputs.push(reward);
+            println!("output {:?}", outputs.last().unwrap());
+            break 'steps;
+          },
+          _ => {
+            let discount: f32 = 0.99;
+            let max_q = env.find_q_max(&next_state);
+            let output = reward + discount * max_q;
+            if output > 1.0 {
+              println!("max_q {}", max_q);
+            }
+            outputs.push(output);
+            println!("output {:?}", outputs.last().unwrap());
+          }
+        }
+        
+      }
+      // reset location
+      let loc = env.loc_mut();
+      loc[0] = 1;
+      loc[1] = 1;
+    }
+
+    // replay -> batch
+
+
   }
 }
