@@ -179,8 +179,8 @@ impl FrozenLake {
   }
 
   pub fn update_exploration_prob(&mut self) {
-    let min_exploration_prob: f64 = 0.01;
-    let exploration_decay: f64 = 0.001;
+    let min_exploration_prob: f64 = 0.1;
+    let exploration_decay: f64 = 0.0001;
     let new_decay = f64::powf(std::f64::consts::E, -exploration_decay * (self.step as f64));
     self.exploration_prob = min_exploration_prob.max(new_decay); // but not lower than `min_exploration_prob`
     println!("set new exploration prob {}", self.exploration_prob);
@@ -203,6 +203,7 @@ impl FrozenLake {
     let next_action_id = self.next_action_max(next_state).unwrap();
     let next_state_probs = self.transition_prob.get(next_state).unwrap().clone();
     let max_prob = next_state_probs[next_action_id];
+    assert!(max_prob < 1.1, "why?? {} {:?} {} {:?}", max_prob, next_state, next_action_id, next_state_probs);
     max_prob
   }
 
@@ -271,13 +272,18 @@ impl FrozenLake {
     let target = reward + discount * max_prob;
     // let new_q = (1.0 - learning_rate) * triggered_prob + learning_rate * ((step_reward as f32) + discount * max_prob);
     
-    state_probs[action_id] = predict + learning_rate * (target - predict);
+    let new_q = predict + learning_rate * (target - predict);
+    state_probs[action_id] = new_q.max(0.0);
 
     // normalize
+    // let total = state_probs.iter().fold(0.0, |sum, val| sum + val.abs());
     let total = state_probs.iter().sum::<f32>();
     for e in state_probs.iter_mut() {
       *e = *e / total;
     }
+
+    // let total_afterwards = state_probs.iter().sum::<f32>();
+    // assert!(total_afterwards <= 1.1, "it's not normalized {} = {:?}", total_afterwards, state_probs);
 
     // my version
     // let mut delta = learning_rate * (step_reward as f32) * discount;
@@ -437,9 +443,9 @@ mod tests {
             let discount: f32 = 0.99;
             let max_q = env.find_q_max(&next_state);
             let output = reward + discount * max_q;
-            if output > 1.0 {
-              println!("max_q {}", max_q);
-            }
+            // if output > 1.0 {
+            //   println!("max_q {}", max_q);
+            // }
             outputs.push(output);
             println!("output {:?}", outputs.last().unwrap());
           }
