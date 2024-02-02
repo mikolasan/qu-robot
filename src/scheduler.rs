@@ -1,15 +1,16 @@
+use std::rc::Rc;
 use std::collections::HashMap;
 
 use crate::neuron::Neuron;
 
-struct Scheduler {
+pub struct Scheduler<'a> {
   propagating: bool,
   time: u64,
-  scheduled: HashMap<u64, Vec<Neuron>>,
+  scheduled: HashMap<u64, Vec<Box<Neuron<'a>>>>,
 }
 
-impl Scheduler {
-  fn new() -> Self {
+impl<'a> Scheduler<'a> {
+  pub fn new() -> Self {
     Scheduler {
       propagating: false,
       time: 0,
@@ -17,7 +18,7 @@ impl Scheduler {
     }
   }
 
-  fn start(&mut self, starting_objects: Vec<Neuron>) {
+  pub fn start(&mut self, starting_objects: Vec<Box<Neuron>>) {
     self.propagating = true;
 
     while self.propagating {
@@ -30,13 +31,18 @@ impl Scheduler {
     }
   }
 
-  fn add(&mut self, time: u64, neuron: Neuron) {
+  pub fn add(&mut self, time: u64, neuron: &Neuron<'a>) {
     if !self.scheduled.contains_key(&time) {
-      self.scheduled.insert(time, vec![neuron]);
-    } else if let Some(neurons) = self.scheduled.get_mut(&time) {
-      if !neurons.contains(&neuron) {
-        neurons.push(neuron);
-      }
+      self.scheduled.insert(time, Vec::new());
+    }
+    
+    if let Some(neurons) = self.scheduled.get_mut(&time) {
+      neurons.iter()
+        .position(|n| n.id == neuron.id)
+        .or_else(|| {
+          neurons.push(Box::new(*neuron));
+          None
+        });
     }
   }
 
@@ -56,18 +62,19 @@ impl Scheduler {
 
 #[cfg(test)]
 mod tests {
-    use crate::neuron::Neuron;
+  use std::rc::Rc;
+  use crate::neuron::Neuron;
 
-    use super::Scheduler;
-
+  use super::Scheduler;
 
   #[test]
   fn main() {
-    let scheduler = Scheduler::new();
-    let neuron = Neuron;
+    let mut scheduler = Rc::new(Scheduler::new());
+    let neuron = Neuron::new("test".to_string(), Rc::clone(&scheduler), 0);
+    let p_neuron = Rc::new(neuron);
 
     // Example usage
-    scheduler.add(1, neuron);
-    scheduler.start(vec![neuron]);
+    scheduler.add(1, &neuron);
+    scheduler.start(vec![p_neuron]);
   }
 }
