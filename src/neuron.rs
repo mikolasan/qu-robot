@@ -1,7 +1,10 @@
+use std::borrow::BorrowMut;
 use std::cell::RefCell;
-use std::rc::{Rc, Weak};
+use std::ops::{DerefMut, Deref};
+use std::rc::{Rc};
 use std::collections::HashMap;
 use std::string;
+use std::sync::{Arc,Weak};
 use uuid::Uuid;
 
 // use crate::scheduler::Scheduler;
@@ -40,20 +43,33 @@ pub type NeuronId = String;
 // }
 
 struct Dendrite {
-  // neuron: Weak<Neuron>,
+  neuron_id: String,
   strength: f64,
 }
 
 impl Dendrite {
-  pub fn new(strength: f64) -> Self {
+  pub fn new(neuron_id: String, strength: f64) -> Self {
     Dendrite {
+      neuron_id,
       strength
     }
   }
 
-  pub fn activate(&mut self) {
+  pub fn inc_strength(&mut self) {
     self.strength += 0.1;
   }
+
+  pub fn dec_strength(&mut self) {
+    self.strength -= 0.1;
+  }
+
+  pub fn get_neuron_id(&self) -> &String {
+    &self.neuron_id
+  }
+
+  // pub fn get_neuron_mut(&mut self) -> &mut Arc<Neuron> {
+  //   &mut self.neuron
+  // }
 
   // pub fn new(neuron: Weak<Neuron>, strength: f64) -> Self {
   //   Dendrite {
@@ -77,9 +93,13 @@ fn sum(values: Vec<f64>) -> f64 {
   values.iter().sum()
 }
 
+// #[derive(Clone)]
 pub struct Neuron {
-  dendrites: Vec<Dendrite>,
-  axon_connections: Vec<Neuron>,
+  // pre_synaptic_connections
+  post_synaptic_connections: Vec<Box<Dendrite>>,
+
+  // dendrites: Vec<Arc<Dendrite>>,
+  // axon_connections: Vec<Dendrite>,
 //   axon: Rc<Axon>,
 //   inputs: HashMap<u64, Vec<f64>>,
   name: String,
@@ -90,10 +110,20 @@ pub struct Neuron {
 }
 
 impl Neuron {
+  pub fn empty() -> Self {
+    Neuron {
+      post_synaptic_connections: Vec::new(),
+      // dendrites: Vec::new(),
+      // axon_connections: Vec::new(),
+      name: String::new(),
+    }
+  }
+
   pub fn new(name: String) -> Self {
     Neuron {
-      dendrites: Vec::new(),
-      axon_connections: Vec::new(),
+      post_synaptic_connections: Vec::new(),
+      // dendrites: Vec::new(),
+      // axon_connections: Vec::new(),
       name,
     }
   }
@@ -111,24 +141,57 @@ impl Neuron {
 //     }
 //   }
 
-  fn add_dendrite(&mut self, strength: Option<f64>) -> &Dendrite {
-    let dendrite = Dendrite::new(strength.unwrap_or_else(|| rand::random()));
-    self.dendrites.push(dendrite);
-    self.dendrites.last().unwrap()
+  pub fn set_name(&mut self, new_name: String) {
+    self.name = new_name;
   }
 
-  fn add_connection(&mut self, neuron: Neuron, strength: Option<f64>) -> &mut Neuron {
-    self.axon_connections.push(neuron);
-    let new_neuron = self.axon_connections.last_mut().unwrap();
-    // self.axon_connections.last_mut().unwrap()
-    //   .add_dendrite(strength);
-    new_neuron.add_dendrite(strength);
-    new_neuron
+  pub fn get_name(&self) -> &String {
+    &self.name
   }
 
-  fn get_last_neuron_mut(&mut self) -> &mut Neuron {
-    self.axon_connections.last_mut().unwrap()
+  pub fn connect_to(&mut self, post_neuron: Arc<Box<Neuron>>) {
+    self.post_synaptic_connections.push(Box::new(
+      Dendrite {
+        neuron_id: post_neuron.get_name().clone(),
+        strength: 0.0
+      }
+    ));
   }
+
+  // fn create_dendrite(self: &Arc<Self>, strength: Option<f64>) -> Dendrite {
+  //   Dendrite::new(
+  //     Arc::clone(&self),
+  //     strength.unwrap_or_else(|| rand::random())
+  //   )
+  // }
+  
+  // fn add_dendrite(&mut self, strength: Option<f64>) -> &Rc<Dendrite> {
+  //   let dendrite = Rc::new(Dendrite::new(
+  //     Rc::new(Neuron::new("name".to_string())),
+  //     strength.unwrap_or_else(|| rand::random())));
+  //   self.dendrites.push(dendrite);
+  //   self.dendrites.last().unwrap()
+  // }
+
+  // pub fn add_connection(& mut self, neuron: &Arc<Neuron>, strength: Option<f64>) {
+  //   // let mut binding = neuron.upgrade().unwrap();
+  //   // let rc_neuron = binding.borrow_mut();
+  //   // assert_eq!(1, Rc::strong_count(neuron), "expect only one ref for neuron");
+  //   // let raw_neuron = Rc::make_mut(neuron);
+  //   // let new_dendrite = raw_neuron.add_dendrite(strength);
+  //   let new_dendrite = neuron.create_dendrite(strength);
+  //   self.axon_connections.push(new_dendrite);
+  //   // let new_neuron = self.axon_connections.last_mut().unwrap();
+  //   // self.axon_connections.last_mut().unwrap()
+  //   //   .add_dendrite(strength);
+  //   // new_neuron
+
+  // }
+
+  // fn get_last_neuron_mut(&mut self) -> &mut Neuron {
+  //   let last_dendrite = self.axon_connections.last_mut().unwrap();
+  //   last_dendrite.get_neuron_mut()
+  // }
 
 //   fn add_connection(mut self: Rc<Self>, neuron: &mut Rc<Neuron>, strength: Option<f64>) {
 //     let dendrite = RefCell::new(Dendrite::new(
@@ -172,13 +235,56 @@ impl Neuron {
 //     self.inputs.remove(&time);
 //     self.axon.activate(time + 1, output);
 //   }
-  pub fn activate(&self, time: u64) {
-    for neuron in &self.axon_connections {
-      neuron.activate(time)
+
+  pub fn activate(&mut self, activated_neurons: &HashMap<String, Vec<f64>>) {
+    for dendrite in self.post_synaptic_connections.iter_mut() {
+      let neuron_id = dendrite.get_neuron_id();
+      if activated_neurons.contains_key(neuron_id) {
+        activated_neurons.get_mut(neuron_id).unwrap()
+          .push(dendrite.strength);
+      } else {
+        activated_neurons.insert(neuron_id.clone(), vec![dendrite.strength]);
+      }
+      dendrite.inc_strength();
     }
+    // self.post_synaptic_connections
+    //   .iter()
+    //   .map(|dendrite| dendrite.neuron_id.clone())
+    //   .collect()
   }
+
+  // pub fn activate(&mut self, time: u64) {
+  //   for dendrite in self.axon_connections.iter_mut() {
+  //     // let neuron = dendrite.get_neuron();
+  //     dendrite.activate();
+  //     // let mut dendrite_clone = dendrite.clone();
+  //     // let new_dendrite = Arc::make_mut(&mut dendrite_clone);
+  //     // println!("activating {} -> {}", self.name, neuron.get_name());
+  //     // neuron.activate(time);
+  //   }
+  //   // for dendrite in self.axon_connections.iter_mut() {
+  //   //   // let neuron = dendrite.get_neuron_mut();
+  //   //   assert_eq!(1, Rc::strong_count(&dendrite), "expect only one ref for dendrite");
+  //   //   let neuron = Rc::make_mut(dendrite)
+  //   //     .get_neuron_mut();
+  //   //   Rc::make_mut(neuron)
+  //   //     .activate(time)
+  //   // }
+  // }
+
 }
 
+// impl Deref for Neuron {
+//   type Target = 
+//   fn deref(&self) -> &Self::Target {
+//     &self.value
+//   }
+// }
+// impl DerefMut for Neuron {
+//   fn deref_mut(&mut self) -> &Self::Target {
+//     &self.value
+//   }
+// }
 
 // struct Sensor {
 //   connections: Vec<RefCell<Dendrite>>,
@@ -193,6 +299,8 @@ impl Neuron {
 mod tests {
   use std::cell::RefCell;
   use std::rc::Rc;
+  use std::sync::Arc;
+
   use crate::neuron::{
     Dendrite,
     Neuron, 
@@ -203,9 +311,11 @@ mod tests {
   
   #[test]
   fn dendrite_test() {
-    let mut d = Dendrite::new(0.0);
-    d.activate();
-    assert_eq!(d.strength, 0.1, "strength after one activation is wrong");
+    // let mut d = Dendrite::new(
+    //   Arc::new(Neuron::new("test neuron".to_string())),
+    //   0.0);
+    // d.activate();
+    // assert_eq!(d.strength, 0.1, "strength after one activation is wrong");
     
     // let mut n1 = Neuron::new();
     // let n2 = Neuron::new();
@@ -220,11 +330,21 @@ mod tests {
     //   .add_connection(Neuron::new(), Some(1.0));
     // n1.activate(0);
 
-    let mut n1 = Neuron::new("n1".to_string());
-    n1.add_connection(Neuron::new("n21".to_string()), Some(1.0));
-    n1.add_connection(Neuron::new("n22".to_string()), Some(1.0));
-    n1.get_last_neuron_mut().add_connection(Neuron::new("32".to_string()), Some(1.0));
-    n1.activate(0);
+    // let mut n1 = Neuron::new("n1".to_string());
+    // n1.add_connection(&mut Rc::new(Neuron::new("n21".to_string())), Some(1.0));
+    // n1.add_connection(&mut Rc::new(Neuron::new("n22".to_string())), Some(1.0));
+    // n1.activate(0);
+
+    let mut n1 = Neuron::new("n11".to_string());
+    let mut n2 = Neuron::new("n12".to_string());
+    let n21 = Arc::new(Neuron::new("n21".to_string()));
+    let n22 = Arc::new(Neuron::new("n22".to_string()));
+    // n1.add_connection(&n21, Some(1.0));
+    // n1.add_connection(&n22, Some(1.0));
+    // n2.add_connection(&n21, Some(1.0));
+    // n2.add_connection(&n22, Some(1.0));
+    // n1.activate(0);
+    // n2.activate(0);
   }
 
   // #[test]
