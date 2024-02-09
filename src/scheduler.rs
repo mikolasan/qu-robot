@@ -47,22 +47,21 @@ impl Scheduler {
   //   name
   // }
 
-  pub fn add_neuron(&mut self) -> String {
-    let mut neuron = Box::new(Neuron::empty());
-    let name = Uuid::new_v4().to_string();
-    neuron.set_name(name.clone());
+  pub fn add_neuron(&mut self, name: Option<String>) -> String {
+    let neuron = Box::new(Neuron::new(name));
+    let neuron_id = neuron.get_name().clone();
     let new_neuron = Arc::new(neuron);
-    self.pool.insert(name.clone(), new_neuron.clone());
-    name
+    self.pool.insert(neuron_id.clone(), new_neuron);
+    neuron_id.clone()
   }
 
-  pub fn connect_neurons(&mut self, pre_id: &String, post_id: &String) {
+  pub fn connect_neurons(&mut self, pre_id: &String, post_id: &String, strength: Option<f64>) {
     let post = self.find_neuron_by_id(post_id);
     let pre = self.find_neuron_by_id_mut(pre_id).unwrap();
-    pre.connect_to(post);
+    pre.connect_to(post, strength);
   }
 
-  fn prepare_next_layer(&mut self, mut activated_neurons: HashMap<String, Vec<f64>>) -> Vec<String> {
+  pub fn prepare_next_layer(&mut self, mut activated_neurons: HashMap<String, Vec<f64>>) -> Vec<String> {
     let mut neurons_next_layer: Vec<String> = Vec::new();
     for (neuron_id, signals) in activated_neurons.iter() {
       if let Some(neuron) = self.find_neuron_by_id_mut(&neuron_id) {
@@ -107,7 +106,7 @@ impl Scheduler {
   pub fn find_neuron_by_id_mut(&mut self, neuron_id: &String) -> Option<&mut Box<Neuron>> {
     let t = self.pool.get_mut(neuron_id);
     if let Some(tt) = t {
-      println!("count in find of {}: {}", tt.get_name(), Arc::weak_count(tt));
+      // println!("count in find of {}: {}", tt.get_name(), Arc::weak_count(tt));
       let ttt = Arc::get_mut(tt).unwrap();
       return Some(ttt);
     }
@@ -191,7 +190,8 @@ impl Scheduler {
 #[cfg(test)]
 mod tests {
   use std::cell::RefCell;
-  use std::rc::Rc;
+  use std::collections::HashMap;
+use std::rc::Rc;
   use std::sync::Arc;
   use crate::neuron::Neuron;
 
@@ -200,7 +200,7 @@ mod tests {
   #[test]
   fn add_take_neurons() {
     let mut scheduler = Box::new(Scheduler::new());
-    let id = scheduler.add_neuron();
+    let id = scheduler.add_neuron(None);
     {
       let rc_neuron = scheduler.find_neuron_by_id(&id);
       println!("added neuron had id {}", rc_neuron.get_name());
@@ -215,13 +215,13 @@ mod tests {
   #[test]
   fn connect_neurons_branching() {
     let mut scheduler = Box::new(Scheduler::new());
-    let id1 = scheduler.add_neuron();
-    let id2 = scheduler.add_neuron();
-    let id3 = scheduler.add_neuron();
-    let id4 = scheduler.add_neuron();
-    scheduler.connect_neurons(&id1, &id2);
-    scheduler.connect_neurons(&id1, &id3);
-    scheduler.connect_neurons(&id1, &id4);
+    let id1 = scheduler.add_neuron(None);
+    let id2 = scheduler.add_neuron(None);
+    let id3 = scheduler.add_neuron(None);
+    let id4 = scheduler.add_neuron(None);
+    scheduler.connect_neurons(&id1, &id2, None);
+    scheduler.connect_neurons(&id1, &id3, None);
+    scheduler.connect_neurons(&id1, &id4, None);
     {
       let rc_neuron1 = scheduler.find_neuron_by_id(&id1);
       println!("can access neuron with id {}", rc_neuron1.get_name());
@@ -240,15 +240,15 @@ mod tests {
   #[test]
   fn connect_neurons_merging() {
     let mut scheduler = Box::new(Scheduler::new());
-    let id1 = scheduler.add_neuron();
-    let id2 = scheduler.add_neuron();
-    let id3 = scheduler.add_neuron();
-    let id4 = scheduler.add_neuron();
-    let id5 = scheduler.add_neuron();
-    scheduler.connect_neurons(&id1, &id2);
-    scheduler.connect_neurons(&id3, &id2);
-    scheduler.connect_neurons(&id2, &id4);
-    scheduler.connect_neurons(&id2, &id5);
+    let id1 = scheduler.add_neuron(None);
+    let id2 = scheduler.add_neuron(None);
+    let id3 = scheduler.add_neuron(None);
+    let id4 = scheduler.add_neuron(None);
+    let id5 = scheduler.add_neuron(None);
+    scheduler.connect_neurons(&id1, &id2, None);
+    scheduler.connect_neurons(&id3, &id2, None);
+    scheduler.connect_neurons(&id2, &id4, None);
+    scheduler.connect_neurons(&id2, &id5, None);
     {
       let rc_neuron1 = scheduler.find_neuron_by_id(&id1);
       println!("can access neuron with id {}", rc_neuron1.get_name());
@@ -266,16 +266,47 @@ mod tests {
   }
 
   #[test]
+  fn feedback_neurons() {
+    let mut scheduler = Box::new(Scheduler::new());
+    let i1 = scheduler.add_neuron(Some("input".to_string()));
+    // let i2 = scheduler.add_neuron(Some("input 2".to_string()));
+    let curiosity = scheduler.add_neuron(Some("curiosity".to_string()));
+    let encoded = scheduler.add_neuron(Some("encoded".to_string()));
+    let correction = scheduler.add_neuron(Some("correction".to_string()));
+    let latent = scheduler.add_neuron(Some("latent".to_string()));
+    scheduler.connect_neurons(&i1, &curiosity, Some(1.0));
+    scheduler.connect_neurons(&i1, &encoded, Some(1.0));
+    // DANGEROUS: here's a loop!
+    scheduler.connect_neurons(&curiosity, &correction, None);
+    scheduler.connect_neurons(&correction, &curiosity, None);
+
+
+    scheduler.connect_neurons(&correction, &encoded, None);
+    scheduler.connect_neurons(&encoded, &latent, None);
+    scheduler.connect_neurons(&encoded, &curiosity, Some(-1.0));
+
+    let a1 = scheduler.prepare_next_layer(HashMap::from([
+      (i1.clone(), vec![1.0])
+    ]));
+    scheduler.activate_neurons(a1);
+
+    let a0 = scheduler.prepare_next_layer(HashMap::from([
+      (i1.clone(), vec![0.0])
+    ]));
+    scheduler.activate_neurons(a0);
+  }
+
+  #[test]
   fn main() {
     let mut scheduler = Box::new(Scheduler::new());
     let neuron = Neuron::new(
-      "test".to_string(), 
+      Some("test".to_string()), 
     );
     
-    let mut n1 = Neuron::new("n11".to_string());
-    let mut n2 = Neuron::new("n12".to_string());
-    let n21 = Arc::new(Neuron::new("n21".to_string()));
-    let n22 = Arc::new(Neuron::new("n22".to_string()));
+    let mut n1 = Neuron::new(Some("n11".to_string()));
+    let mut n2 = Neuron::new(Some("n12".to_string()));
+    let n21 = Arc::new(Neuron::new(Some("n21".to_string())));
+    let n22 = Arc::new(Neuron::new(Some("n22".to_string())));
 
     // n1.add_connection(&n21, Some(1.0));
     // n1.add_connection(&n22, Some(1.0));

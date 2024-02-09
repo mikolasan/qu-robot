@@ -120,12 +120,12 @@ impl Neuron {
     }
   }
 
-  pub fn new(name: String) -> Self {
+  pub fn new(name: Option<String>) -> Self {
     Neuron {
       post_synaptic_connections: Vec::new(),
       // dendrites: Vec::new(),
       // axon_connections: Vec::new(),
-      name,
+      name: name.unwrap_or_else(|| Uuid::new_v4().to_string()),
       transform_fn: sum,
     }
   }
@@ -151,11 +151,11 @@ impl Neuron {
     &self.name
   }
 
-  pub fn connect_to(&mut self, post_neuron: Arc<Box<Neuron>>) {
+  pub fn connect_to(&mut self, post_neuron: Arc<Box<Neuron>>, strength: Option<f64>) {
     self.post_synaptic_connections.push(Box::new(
       Dendrite {
         neuron_id: post_neuron.get_name().clone(),
-        strength: 0.0
+        strength: strength.unwrap_or(0.0),
       }
     ));
   }
@@ -342,10 +342,10 @@ mod tests {
     // n1.add_connection(&mut Rc::new(Neuron::new("n22".to_string())), Some(1.0));
     // n1.activate(0);
 
-    let mut n1 = Neuron::new("n11".to_string());
-    let mut n2 = Neuron::new("n12".to_string());
-    let n21 = Arc::new(Neuron::new("n21".to_string()));
-    let n22 = Arc::new(Neuron::new("n22".to_string()));
+    let mut n1 = Neuron::new(Some("n11".to_string()));
+    let mut n2 = Neuron::new(Some("n12".to_string()));
+    let n21 = Arc::new(Neuron::new(Some("n21".to_string())));
+    let n22 = Arc::new(Neuron::new(Some("n22".to_string())));
     // n1.add_connection(&n21, Some(1.0));
     // n1.add_connection(&n22, Some(1.0));
     // n2.add_connection(&n21, Some(1.0));
