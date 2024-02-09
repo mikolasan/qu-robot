@@ -104,7 +104,7 @@ pub struct Neuron {
 //   inputs: HashMap<u64, Vec<f64>>,
   name: String,
 //   pub id: Uuid,
-//   transform_fn: fn(Vec<f64>) -> f64,
+  transform_fn: fn(Vec<f64>) -> f64,
 //   scheduler: RefCell<Scheduler>,
 //   activation_delay: u64,
 }
@@ -116,6 +116,7 @@ impl Neuron {
       // dendrites: Vec::new(),
       // axon_connections: Vec::new(),
       name: String::new(),
+      transform_fn: sum,
     }
   }
 
@@ -125,6 +126,7 @@ impl Neuron {
       // dendrites: Vec::new(),
       // axon_connections: Vec::new(),
       name,
+      transform_fn: sum,
     }
   }
 //   pub fn new(name: String, scheduler: RefCell<Scheduler>, activation_delay: u64) -> Self {
@@ -236,7 +238,7 @@ impl Neuron {
 //     self.axon.activate(time + 1, output);
 //   }
 
-  pub fn activate(&mut self, activated_neurons: &HashMap<String, Vec<f64>>) {
+  pub fn activate(&mut self, activated_neurons: &mut HashMap<String, Vec<f64>>) {
     for dendrite in self.post_synaptic_connections.iter_mut() {
       let neuron_id = dendrite.get_neuron_id();
       if activated_neurons.contains_key(neuron_id) {
@@ -251,6 +253,11 @@ impl Neuron {
     //   .iter()
     //   .map(|dendrite| dendrite.neuron_id.clone())
     //   .collect()
+  }
+
+  pub fn process_signals(&self, signals: &Vec<f64>) -> Option<f64> {
+    let output = (self.transform_fn)(signals.clone());
+    Some(output)
   }
 
   // pub fn activate(&mut self, time: u64) {

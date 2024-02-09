@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, result};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::thread;
@@ -62,21 +62,34 @@ impl Scheduler {
     pre.connect_to(post);
   }
 
-  fn prepare_next_layer(&self) -> Vec<String> {
-
+  fn prepare_next_layer(&mut self, mut activated_neurons: HashMap<String, Vec<f64>>) -> Vec<String> {
+    let mut neurons_next_layer: Vec<String> = Vec::new();
+    for (neuron_id, signals) in activated_neurons.iter() {
+      if let Some(neuron) = self.find_neuron_by_id_mut(&neuron_id) {
+        // TODO: name it! it's potential activity or something
+        let result = neuron.process_signals(signals);
+        if let Some(threshold) = result {
+          neurons_next_layer.push(neuron_id.clone());
+        }
+      }
+    }
+    neurons_next_layer
   }
 
   pub fn activate_neurons(&mut self, activated_neurons: Vec<String>) {
-    let mut neurons_next_layer: Vec<Vec<String>> = Vec::new();
+    if activated_neurons.is_empty() {
+      return;
+    }
+
+    // let mut neurons_next_layer: Vec<Vec<String>> = Vec::new();
     let mut strength_per_neuron: HashMap<String, Vec<f64>> = HashMap::new();
     for neuron_id in activated_neurons {
       if let Some(neuron) = self.find_neuron_by_id_mut(&neuron_id) {
-        neuron.activate(&strength_per_neuron);
+        neuron.activate(&mut strength_per_neuron);
       }
     }
-    for next_ids in neurons_next_layer.into_iter() {
-      self.activate_neurons(next_ids);
-    }
+    let neurons_next_layer: Vec<String> = self.prepare_next_layer(strength_per_neuron);
+    self.activate_neurons(neurons_next_layer);
 
     // let neurons_next_layer: Vec<Vec<&String>> = activated_neurons.into_iter()
     //   .map(|neuron_id| 
