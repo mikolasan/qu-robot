@@ -104,6 +104,8 @@ pub struct Neuron {
 //   inputs: HashMap<u64, Vec<f64>>,
   name: String,
 //   pub id: Uuid,
+  pub potential: i32,
+  pub threshold: i32,
   transform_fn: fn(Vec<f64>) -> f64,
 //   scheduler: RefCell<Scheduler>,
 //   activation_delay: u64,
@@ -116,16 +118,20 @@ impl Neuron {
       // dendrites: Vec::new(),
       // axon_connections: Vec::new(),
       name: String::new(),
+      potential: 0,
+      threshold: i32::MAX,
       transform_fn: sum,
     }
   }
 
-  pub fn new(name: Option<String>) -> Self {
+  pub fn new(threshold: i32, name: Option<String>) -> Self {
     Neuron {
       post_synaptic_connections: Vec::new(),
       // dendrites: Vec::new(),
       // axon_connections: Vec::new(),
       name: name.unwrap_or_else(|| Uuid::new_v4().to_string()),
+      potential: 0,
+      threshold,
       transform_fn: sum,
     }
   }
@@ -238,7 +244,12 @@ impl Neuron {
 //     self.axon.activate(time + 1, output);
 //   }
 
-  pub fn activate(&mut self, activated_neurons: &mut HashMap<String, Vec<f64>>) {
+  pub fn transmit(&mut self, activated_neurons: &mut HashMap<String, Vec<f64>>) {
+    // self.potential += 1;
+    // if self.potential < self.threshold {
+    //   return;
+    // }
+
     for dendrite in self.post_synaptic_connections.iter_mut() {
       let neuron_id = dendrite.get_neuron_id();
       if activated_neurons.contains_key(neuron_id) {
@@ -247,7 +258,7 @@ impl Neuron {
       } else {
         activated_neurons.insert(neuron_id.clone(), vec![dendrite.strength]);
       }
-      dendrite.inc_strength();
+      // dendrite.inc_strength();
     }
     // self.post_synaptic_connections
     //   .iter()
@@ -258,6 +269,10 @@ impl Neuron {
   pub fn process_signals(&self, signals: &Vec<f64>) -> Option<f64> {
     let output = (self.transform_fn)(signals.clone());
     Some(output)
+  }
+
+  pub fn update_potential(&mut self, diff: i32) {
+    self.potential += diff;
   }
 
   // pub fn activate(&mut self, time: u64) {
@@ -342,10 +357,10 @@ mod tests {
     // n1.add_connection(&mut Rc::new(Neuron::new("n22".to_string())), Some(1.0));
     // n1.activate(0);
 
-    let mut n1 = Neuron::new(Some("n11".to_string()));
-    let mut n2 = Neuron::new(Some("n12".to_string()));
-    let n21 = Arc::new(Neuron::new(Some("n21".to_string())));
-    let n22 = Arc::new(Neuron::new(Some("n22".to_string())));
+    let mut n1 = Neuron::new(0, Some("n11".to_string()));
+    let mut n2 = Neuron::new(0, Some("n12".to_string()));
+    let n21 = Arc::new(Neuron::new(0, Some("n21".to_string())));
+    let n22 = Arc::new(Neuron::new(0, Some("n22".to_string())));
     // n1.add_connection(&n21, Some(1.0));
     // n1.add_connection(&n22, Some(1.0));
     // n2.add_connection(&n21, Some(1.0));
