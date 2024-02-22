@@ -2,50 +2,40 @@ use std::{cell::RefCell, result};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::thread;
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use uuid::Uuid;
 
 use crate::neuron::{Neuron, self};
 
+// The time required to transmit a signal from one neuron through action potential 
+// to dendrites of the next connected neuron can vary, but it typically ranges from 
+// about 1 to 10 milliseconds. 
+// In some cases, this process can occur even faster, in microseconds, 
+// especially in highly myelinated neurons or in cases of electrical synapses.
+// The shortest time between constant activation of sensor neurons in the human eye, 
+// such as cones and rods, is known as the flicker fusion threshold, which is about 10-16 ms.
+
+// The refractory period is the time during which a neuron is incapable of generating another action potential.
+// Absolute refractory period is the initial phase during which the neuron cannot generate another action potential 
+// under any circumstances typically, it lasts for about 1 to 2 milliseconds. 
+// Following the absolute refractory period, there is a relative refractory period 
+// during which the neuron can generate another action potential, 
+// but only in response to a stronger-than-normal stimulus. Can range from 2 to 4 milliseconds or more.
+
 pub struct Scheduler {
-  pool: HashMap<String, Arc<Box<Neuron>>>,
+  pool: BTreeMap<String, Arc<Box<Neuron>>>,
+  time: u64,
 //   propagating: bool,
-//   time: u64,
 //   scheduled: HashMap<u64, Vec<RefCell<Neuron>>>,
 }
 
 impl Scheduler {
   pub fn new() -> Self {
     Scheduler {
-      pool: HashMap::new(),
+      pool: BTreeMap::new(),
+      time: 0,
     }
   }
-//   pub fn new() -> Self {
-//     Scheduler {
-//       propagating: false,
-//       time: 0,
-//       scheduled: HashMap::new(),
-//     }
-//   }
-
-  // pub fn add_neuron(&mut self) {
-  //   let neuron = Box::new(Neuron::new(0, "hmm".to_string()));
-  //   self.test = Some(neuron);
-
-  //   let neuron2 = Rc::new(
-  //     Box::new(
-  //       Neuron::new(0, "well".to_string())
-  //   ));
-  //   self.test2.push(neuron2);
-  // }
-
-  // pub fn add(&mut self, time: u64, mut neuron: Box<Neuron>) -> String {
-  //   let name = Uuid::new_v4().to_string();
-  //   neuron.set_name(name.clone());
-  //   let new_neuron = Arc::new(neuron);
-  //   self.pool.insert(name.clone(), new_neuron.clone());
-  //   name
-  // }
 
   pub fn add_neuron(&mut self, threshold: i32, name: Option<String>) -> String {
     let neuron = Box::new(Neuron::new(threshold, name));
@@ -80,6 +70,7 @@ impl Scheduler {
 
   pub fn send_action_potential(&mut self, activated_neurons: Vec<String>) {
     if activated_neurons.is_empty() {
+      println!("activation path is over at {}", self.time);
       return;
     }
 
@@ -87,10 +78,17 @@ impl Scheduler {
     let mut strength_per_neuron: HashMap<String, Vec<f64>> = HashMap::new();
     for neuron_id in activated_neurons {
       if let Some(neuron) = self.find_neuron_by_id_mut(&neuron_id) {
+        neuron.potential = 0;
         neuron.transmit(&mut strength_per_neuron);
+      } else {
+        println!("Failed to get neuron '{}'", neuron_id);
       }
     }
+
+    self.time += 1;
     let neurons_next_layer: Vec<String> = self.prepare_next_layer(strength_per_neuron);
+    println!(">> time {} <<", self.time);
+    self.print_pool();
     self.send_action_potential(neurons_next_layer);
 
     // let neurons_next_layer: Vec<Vec<&String>> = activated_neurons.into_iter()
@@ -128,18 +126,6 @@ impl Scheduler {
       None
     }
   }
-
-//   pub fn add(&mut self, time: u64, neuron: RefCell<Neuron>) {
-//     if !self.scheduled.contains_key(&time) {
-//       self.scheduled.insert(time, Vec::new());
-//     }
-    
-//     if let Some(neurons) = self.scheduled.get_mut(&time) {
-//       if neurons.iter().position(|n| n.borrow().id == neuron.borrow().id).is_none() {
-//         neurons.push(neuron);
-//       }
-//     }
-//   }
 
   pub fn start(&self, starting_neurons: &'static mut [&mut Neuron]) {
     // let mut handle_vec = vec![];
@@ -181,16 +167,9 @@ impl Scheduler {
 //     }
 //   }
 
-//   fn run_scheduled(&mut self, time: u64) {
-//     for neuron in self.scheduled[&time].iter_mut() {
-//       neuron.borrow_mut()
-//         .activate(time);
-//     }
-//   }
-
   pub fn print_pool(&self) {
     for (id, neuron) in self.pool.iter() {
-      println!("{} - {}", neuron.get_name(), neuron.potential);
+        println!("{} - {}", neuron.get_name(), neuron.potential);
     }
   }
 }
@@ -282,7 +261,7 @@ mod tests {
     let i2 = scheduler.add_neuron(1, Some("input 2".to_string()));
     let encoder = scheduler.add_neuron(4, Some("encoder".to_string()));
     let correction = scheduler.add_neuron(3, Some("correction".to_string()));
-    let latent = scheduler.add_neuron(1, Some("latent".to_string()));
+    let latent = scheduler.add_neuron(10, Some("latent".to_string())); // stop propagation on this neuron => big threshold
     let fix = scheduler.add_neuron(1, Some("fix".to_string()));
     
     scheduler.connect_neurons(&i1, &encoder, Some(1.0));
@@ -296,19 +275,55 @@ mod tests {
     scheduler.connect_neurons(&correction, &fix, Some(1.0));
     scheduler.connect_neurons(&fix, &encoder, Some(1.0));
 
+    println!("-- signal 1 ({}): (1, 1) --", scheduler.time);
     let a1 = scheduler.prepare_next_layer(HashMap::from([
       (i1.clone(), vec![1.0]),
       (i2.clone(), vec![1.0]),
     ]));
     scheduler.send_action_potential(a1);
-    scheduler.print_pool();
+    // scheduler.print_pool();
 
+    println!("-- signal 2 ({}): (0, 1) --", scheduler.time);
     let a2 = scheduler.prepare_next_layer(HashMap::from([
-      (i1.clone(), vec![0.0]),
+      (i1.clone(), vec![1.0]),
       (i2.clone(), vec![1.0]),
     ]));
     scheduler.send_action_potential(a2);
-    scheduler.print_pool();
+    // scheduler.print_pool();
+  }
+
+  // CPG
+  #[test]
+  fn central_pattern_generator() {
+    let mut scheduler = Box::new(Scheduler::new());
+    
+    let signal = scheduler.add_neuron(1, Some("signal".to_string()));
+    let motor_command_left = scheduler.add_neuron(1, Some("motor cmd left".to_string()));
+    let motor_command_right = scheduler.add_neuron(1, Some("motor cmd right".to_string()));
+    let primary_left = scheduler.add_neuron(2, Some("primary left".to_string()));
+    let primary_right = scheduler.add_neuron(2, Some("primary_right".to_string())); // stop propagation on this neuron => big threshold
+    
+    scheduler.connect_neurons(&signal, &motor_command_left, Some(1.0));
+    scheduler.connect_neurons(&signal, &motor_command_right, Some(1.0));
+    scheduler.connect_neurons(&motor_command_left, &primary_left, Some(1.0));
+    scheduler.connect_neurons(&motor_command_left, &primary_right, Some(1.0));
+    scheduler.connect_neurons(&motor_command_right, &primary_left, Some(1.0));
+    scheduler.connect_neurons(&motor_command_right, &primary_right, Some(1.0));
+    
+    scheduler.connect_neurons(&primary_left, &motor_command_left, Some(-1.0));
+    scheduler.connect_neurons(&primary_right, &motor_command_left, Some(-1.0));
+    
+    println!("-- signal 1 ({}) --", scheduler.time);
+    let a1 = scheduler.prepare_next_layer(HashMap::from([
+      (signal.clone(), vec![1.0]),
+    ]));
+    scheduler.send_action_potential(a1);
+
+    println!("-- signal 2 ({}) --", scheduler.time);
+    let a2 = scheduler.prepare_next_layer(HashMap::from([
+      (signal.clone(), vec![1.0]),
+    ]));
+    scheduler.send_action_potential(a2);
   }
 
   #[test]
