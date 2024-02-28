@@ -104,7 +104,7 @@ pub struct Neuron {
 //   inputs: HashMap<u64, Vec<f64>>,
   name: String,
 //   pub id: Uuid,
-  pub potential: i32,
+  pub potential: f64,
   pub threshold: i32,
   transform_fn: fn(Vec<f64>) -> f64,
 //   scheduler: RefCell<Scheduler>,
@@ -118,7 +118,7 @@ impl Neuron {
       // dendrites: Vec::new(),
       // axon_connections: Vec::new(),
       name: String::new(),
-      potential: 0,
+      potential: 0.0,
       threshold: i32::MAX,
       transform_fn: sum,
     }
@@ -130,7 +130,7 @@ impl Neuron {
       // dendrites: Vec::new(),
       // axon_connections: Vec::new(),
       name: name.unwrap_or_else(|| Uuid::new_v4().to_string()),
-      potential: 0,
+      potential: 0.0,
       threshold,
       transform_fn: sum,
     }
@@ -157,10 +157,10 @@ impl Neuron {
     &self.name
   }
 
-  pub fn connect_to(&mut self, post_neuron: Arc<Box<Neuron>>, strength: Option<f64>) {
+  pub fn connect_to(&mut self, post_neuron_id: String, strength: Option<f64>) {
     self.post_synaptic_connections.push(Box::new(
       Dendrite {
-        neuron_id: post_neuron.get_name().clone(),
+        neuron_id: post_neuron_id,
         strength: strength.unwrap_or(0.0),
       }
     ));
@@ -271,7 +271,7 @@ impl Neuron {
     Some(output)
   }
 
-  pub fn update_potential(&mut self, diff: i32) {
+  pub fn update_potential(&mut self, diff: f64) {
     self.potential += diff;
   }
 

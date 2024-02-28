@@ -46,9 +46,8 @@ impl Scheduler {
   }
 
   pub fn connect_neurons(&mut self, pre_id: &String, post_id: &String, strength: Option<f64>) {
-    let post = self.find_neuron_by_id(post_id);
     let pre = self.find_neuron_by_id_mut(pre_id).unwrap();
-    pre.connect_to(post, strength);
+    pre.connect_to(post_id.clone(), strength);
   }
 
   pub fn prepare_next_layer(&mut self, mut activated_neurons: HashMap<String, Vec<f64>>) -> Vec<String> {
@@ -56,10 +55,12 @@ impl Scheduler {
     for (neuron_id, signals) in activated_neurons.iter() {
       if let Some(neuron) = self.find_neuron_by_id_mut(&neuron_id) {
         // TODO: name it! it's potential activity or something
+        let prev_potential = neuron.potential;
+        println!("{} + {:?} ===> {}", prev_potential, signals, neuron_id.clone());
         let result = neuron.process_signals(signals);
         if let Some(potential_diff) = result {
-          neuron.update_potential(potential_diff as i32);
-          if neuron.potential >= neuron.threshold {
+          neuron.update_potential(potential_diff);
+          if neuron.potential >= neuron.threshold as f64 {
             neurons_next_layer.push(neuron_id.clone());
           }
         }
@@ -78,7 +79,7 @@ impl Scheduler {
     let mut strength_per_neuron: HashMap<String, Vec<f64>> = HashMap::new();
     for neuron_id in activated_neurons {
       if let Some(neuron) = self.find_neuron_by_id_mut(&neuron_id) {
-        neuron.potential = 0;
+        neuron.potential = 0.0;
         neuron.transmit(&mut strength_per_neuron);
       } else {
         println!("Failed to get neuron '{}'", neuron_id);
@@ -105,11 +106,8 @@ impl Scheduler {
   }
 
   pub fn find_neuron_by_id_mut(&mut self, neuron_id: &String) -> Option<&mut Box<Neuron>> {
-    let t = self.pool.get_mut(neuron_id);
-    if let Some(tt) = t {
-      // println!("count in find of {}: {}", tt.get_name(), Arc::weak_count(tt));
-      let ttt = Arc::get_mut(tt).unwrap();
-      return Some(ttt);
+    if let Some(tt) = self.pool.get_mut(neuron_id) {
+      return Arc::get_mut(tt);
     }
     None
   }
@@ -298,32 +296,77 @@ mod tests {
     let mut scheduler = Box::new(Scheduler::new());
     
     let signal = scheduler.add_neuron(1, Some("signal".to_string()));
-    let motor_command_left = scheduler.add_neuron(1, Some("motor cmd left".to_string()));
-    let motor_command_right = scheduler.add_neuron(1, Some("motor cmd right".to_string()));
-    let primary_left = scheduler.add_neuron(2, Some("primary left".to_string()));
-    let primary_right = scheduler.add_neuron(2, Some("primary_right".to_string())); // stop propagation on this neuron => big threshold
+    let feedback1 = scheduler.add_neuron(1, Some("l1".to_string()));
+    let feedback2 = scheduler.add_neuron(1, Some("l2".to_string()));
     
-    scheduler.connect_neurons(&signal, &motor_command_left, Some(1.0));
-    scheduler.connect_neurons(&signal, &motor_command_right, Some(1.0));
-    scheduler.connect_neurons(&motor_command_left, &primary_left, Some(1.0));
-    scheduler.connect_neurons(&motor_command_left, &primary_right, Some(1.0));
-    scheduler.connect_neurons(&motor_command_right, &primary_left, Some(1.0));
-    scheduler.connect_neurons(&motor_command_right, &primary_right, Some(1.0));
-    
-    scheduler.connect_neurons(&primary_left, &motor_command_left, Some(-1.0));
-    scheduler.connect_neurons(&primary_right, &motor_command_left, Some(-1.0));
-    
+    {
+      let drive1 = scheduler.add_neuron(10, Some("d1".to_string()));
+      let drive2 = scheduler.add_neuron(10, Some("d2".to_string()));
+      let a1 = scheduler.add_neuron(2, Some("a1".to_string()));
+      let a2 = scheduler.add_neuron(2, Some("a2".to_string()));
+      let c1 = scheduler.add_neuron(1, Some("c1".to_string()));
+      let c2 = scheduler.add_neuron(1, Some("c2".to_string()));
+      let uv1 = scheduler.add_neuron(1, Some("uv1".to_string()));
+      let uv2 = scheduler.add_neuron(1, Some("uv2".to_string()));
+      
+      scheduler.connect_neurons(&signal, &a1, Some(1.0));
+      scheduler.connect_neurons(&signal, &a2, Some(1.0));
+      
+      scheduler.connect_neurons(&feedback1, &uv1, Some(0.5));
+      scheduler.connect_neurons(&feedback1, &c1, Some(0.5));
+      scheduler.connect_neurons(&feedback2, &uv2, Some(0.5));
+      scheduler.connect_neurons(&feedback2, &c2, Some(0.5));
+      
+      scheduler.connect_neurons(&uv1, &a1, Some(1.0));
+      scheduler.connect_neurons(&uv1, &uv1, Some(-1.0));
+      scheduler.connect_neurons(&uv1, &uv2, Some(-0.25));
+      scheduler.connect_neurons(&uv1, &c1, Some(0.25));
+      scheduler.connect_neurons(&uv1, &c2, Some(-0.25));
+      
+      scheduler.connect_neurons(&uv2, &a2, Some(1.0));
+      scheduler.connect_neurons(&uv2, &uv2, Some(-1.0));
+      scheduler.connect_neurons(&uv2, &uv1, Some(-0.25));
+      scheduler.connect_neurons(&uv2, &c2, Some(0.25));
+      scheduler.connect_neurons(&uv2, &c1, Some(-0.25));
+
+      scheduler.connect_neurons(&a1, &drive1, Some(1.0));
+      scheduler.connect_neurons(&a1, &uv1, Some(1.0));
+      scheduler.connect_neurons(&a1, &uv2, Some(-0.25));
+      scheduler.connect_neurons(&a2, &drive2, Some(1.0));
+      scheduler.connect_neurons(&a2, &uv2, Some(1.0));
+      scheduler.connect_neurons(&a2, &uv1, Some(-0.25));
+
+      scheduler.connect_neurons(&c1, &c2, Some(-1.0));
+      scheduler.connect_neurons(&c1, &uv1, Some(1.0)); // modulatory
+      scheduler.connect_neurons(&c1, &a1, Some(1.0)); // modulatory
+      scheduler.connect_neurons(&c2, &c1, Some(-1.0));
+      scheduler.connect_neurons(&c2, &uv2, Some(1.0)); // modulatory
+      scheduler.connect_neurons(&c2, &a2, Some(1.0)); // modulatory
+    }
+
     println!("-- signal 1 ({}) --", scheduler.time);
     let a1 = scheduler.prepare_next_layer(HashMap::from([
-      (signal.clone(), vec![1.0]),
+      (feedback1.clone(), vec![1.0]),
     ]));
+    scheduler.send_action_potential(a1.clone());
+
+    println!("-- signal 2 ({}) --", scheduler.time);
     scheduler.send_action_potential(a1);
 
     println!("-- signal 2 ({}) --", scheduler.time);
     let a2 = scheduler.prepare_next_layer(HashMap::from([
       (signal.clone(), vec![1.0]),
+      (feedback1.clone(), vec![1.0]),
     ]));
     scheduler.send_action_potential(a2);
+
+    println!("-- signal 3 ({}) --", scheduler.time);
+    let a3 = scheduler.prepare_next_layer(HashMap::from([
+      (signal.clone(), vec![1.0]),
+      (feedback1.clone(), vec![1.0]),
+    ]));
+    scheduler.send_action_potential(a3);
+
   }
 
   #[test]
