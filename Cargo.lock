@@ -1250,15 +1250,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gl"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a94edab108827d67608095e269cf862e60d920f144a5026d3dbcfd8b877fb404"
-dependencies = [
- "gl_generator 0.14.0",
-]
-
-[[package]]
 name = "gl_generator"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1331,6 +1322,25 @@ checksum = "063ce2eb6a8d0ea93d2bf8ba1957e78dbab6be1c2220dd3daca57d5a9d869898"
 dependencies = [
  "libc",
  "system-deps",
+]
+
+[[package]]
+name = "glium"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94d5813c960a54b76e20fe4ef7e54fbeb12545776a11ecf14f42a946a1c65964"
+dependencies = [
+ "backtrace",
+ "fnv",
+ "gl_generator 0.14.0",
+ "glutin",
+ "glutin-winit",
+ "lazy_static",
+ "memoffset",
+ "raw-window-handle 0.5.2",
+ "smallvec",
+ "takeable-option",
+ "winit",
 ]
 
 [[package]]
@@ -2436,17 +2446,14 @@ name = "qu-robot"
 version = "0.1.0"
 dependencies = [
  "actix-web",
- "gl",
  "gl_generator 0.5.5",
  "glib-build-tools",
- "glutin",
- "glutin-winit",
+ "glium",
  "gtk4",
  "ndarray 0.15.6",
  "ndarray-rand",
  "plotters",
  "rand 0.8.5",
- "raw-window-handle 0.6.0",
  "rsrl",
  "serde",
  "serde_json",
@@ -3009,6 +3016,12 @@ dependencies = [
  "toml",
  "version-compare",
 ]
+
+[[package]]
+name = "takeable-option"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36ae8932fcfea38b7d3883ae2ab357b0d57a02caaa18ebb4f5ece08beaec4aa0"
 
 [[package]]
 name = "target-lexicon"
