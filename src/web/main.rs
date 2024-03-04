@@ -17,6 +17,7 @@ mod grid_world;
 // mod window;
 mod neuron;
 mod scheduler;
+mod gl;
 
 use crate::{
   frozen_lake::{ACTIONS, FrozenLake},
