@@ -1,27 +1,27 @@
+use std::num::NonZeroU32;
+
+use glium::Surface;
 use raw_window_handle::HasRawWindowHandle;
 use imgui_winit_support::WinitPlatform;
 use imgui_winit_support::winit::event::{Event, KeyEvent, WindowEvent};
 use imgui_winit_support::winit::keyboard::{Key, NamedKey};
 use imgui_winit_support::winit::window::{WindowBuilder, Window};
 use imgui_winit_support::winit::event_loop::{EventLoopBuilder, EventLoop};
-use glutin::surface::{WindowSurface, Surface};
+
 use glutin::config::{ConfigTemplateBuilder, Config};
-use glutin::context::{ContextApi, ContextAttributesBuilder, PossiblyCurrentContext};
+use glutin::context::{ContextAttributesBuilder, PossiblyCurrentContext};
 use glutin::display::GetGlDisplay;
-use glutin::prelude::*;
-use glutin::surface::SurfaceAttributesBuilder;
+use glutin::surface::{SurfaceAttributesBuilder, WindowSurface};
 use glutin_winit::DisplayBuilder;
 
-use takeable_option::Takeable;
+use imgui::{DrawCmd, DrawCmdParams};
+use imgui_glium_renderer::Renderer;
 
-use std::ffi::CString;
-use std::rc::Rc;
-use std::cell::RefCell;
-use std::num::NonZeroU32;
-use std::os::raw::c_void;
+// mod renderer;
+// use renderer::Renderer;
+// mod cube;
+// use cube::Cube;
 
-mod renderer;
-use renderer::Renderer;
 
 fn gl_config_picker(mut configs: Box<dyn Iterator<Item = Config> + '_>) -> Config {
     // Just use the first configuration since we don't have any special preferences here
@@ -31,7 +31,7 @@ fn gl_config_picker(mut configs: Box<dyn Iterator<Item = Config> + '_>) -> Confi
 fn create_window() -> (
     EventLoop<()>,
     Window,
-    Surface<WindowSurface>,
+    glium::Display<WindowSurface>,
     PossiblyCurrentContext,
     Config
 ) {
@@ -39,7 +39,8 @@ fn create_window() -> (
     // let event_loop = EventLoopBuilder::new()
     //     .build()
     //     .expect("Failed to create EventLoop");
-    let event_loop = EventLoop::new().unwrap();
+    let event_loop = EventLoop::new()
+        .expect("Failed to create EventLoop");
     
     let window_builder = WindowBuilder::new();
     let config_template_builder = ConfigTemplateBuilder::new();
@@ -49,7 +50,7 @@ fn create_window() -> (
     // First we create a window
     let (window, gl_config) = display_builder
         .build(&event_loop, config_template_builder, gl_config_picker)
-        .unwrap();
+        .expect("Failed to create OpenGL window");
     let window = window.unwrap();
 
     // Then the configuration which decides which OpenGL version we'll end up using, here we just use the default which is currently 3.3 core
@@ -66,23 +67,27 @@ fn create_window() -> (
 
     // Determine our framebuffer size based on the window size, or default to 800x600 if it's invisible
     let (width, height): (u32, u32) = window.inner_size().into();
-    let attrs = SurfaceAttributesBuilder::<WindowSurface>::new().build(
-        raw_window_handle,
-        NonZeroU32::new(width).unwrap(),
-        NonZeroU32::new(height).unwrap(),
+    let surface_attribs = SurfaceAttributesBuilder::<WindowSurface>::new()
+        .build(
+            raw_window_handle,
+            NonZeroU32::new(width).unwrap(),
+            NonZeroU32::new(height).unwrap(),
     );
     // Now we can create our surface, use it to make our context current and finally create our display
 
     let surface = unsafe { 
         gl_config.display()
-            .create_window_surface(&gl_config, &attrs)
+            .create_window_surface(&gl_config, &surface_attribs)
             .expect("Failed to create OpenGL surface")
     };
     let context = context
         .make_current(&surface)
         .expect("Failed to make OpenGL context current");
 
-    (event_loop, window, surface, context, gl_config)
+    let display = glium::Display::from_context_surface(context, surface)
+        .expect("Failed to create glium Display");
+
+    (event_loop, window, display, context, gl_config)
 }
 
 fn imgui_init(window: &Window) -> (WinitPlatform, imgui::Context) {
@@ -106,17 +111,133 @@ fn imgui_init(window: &Window) -> (WinitPlatform, imgui::Context) {
 }
 
 fn main() {
-    let (event_loop, window, gl_surface, gl_context, gl_config) = create_window();
+    let (event_loop, 
+        window, 
+        display, 
+        gl_context, 
+        gl_config) = create_window();
     let (mut winit_platform, mut imgui_context) = imgui_init(&window);
 
     //let mut state = None;
-    let gl_display = gl_config.display();
+    // let gl_display = gl_config.display();
+    
     // The context needs to be current for the Renderer to set up shaders and
     // buffers. It also performs function loading, which needs a current context on
     // WGL.
-    let mut renderer = Renderer::new(&gl_display);
+    // let mut renderer = Renderer::new(&gl_display);
+
+    let mut renderer = Renderer::init(&mut imgui_context, &display)
+        .expect("Failed to initialize renderer");
+
+    // Timer for FPS calculation
+    let mut last_frame = std::time::Instant::now();
+
     event_loop.run(move |event, window_target| {
         match event {
+            Event::NewEvents(_) => {
+                let now = std::time::Instant::now();
+                imgui_context.io_mut().update_delta_time(now - last_frame);
+                last_frame = now;
+            }
+            Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } => {
+                let ui = imgui_context.frame();
+
+                // Draw our example content
+                ui.show_demo_window(&mut true);
+                let draw_data = imgui_context.render();   
+                
+                let fb_width = draw_data.display_size[0] * draw_data.framebuffer_scale[0];
+                let fb_height = draw_data.display_size[1] * draw_data.framebuffer_scale[1];
+
+                let left = draw_data.display_pos[0];
+                let right = draw_data.display_pos[0] + draw_data.display_size[0];
+                let top = draw_data.display_pos[1];
+                let bottom = draw_data.display_pos[1] + draw_data.display_size[1];
+                let matrix = [
+                    [(2.0 / (right - left)), 0.0, 0.0, 0.0],
+                    [0.0, (2.0 / (top - bottom)), 0.0, 0.0],
+                    [0.0, 0.0, -1.0, 0.0],
+                    [
+                        (right + left) / (left - right),
+                        (top + bottom) / (bottom - top),
+                        0.0,
+                        1.0,
+                    ],
+                ];
+                let clip_off = draw_data.display_pos;
+                let clip_scale = draw_data.framebuffer_scale;
+                // for draw_list in draw_data.draw_lists() {
+                    
+                //     let vtx_buffer = VertexBuffer::immutable(&self.ctx, unsafe {
+                //         draw_list.transmute_vtx_buffer::<GliumDrawVert>()
+                //     })?;
+                //     let idx_buffer = IndexBuffer::immutable(
+                //         &self.ctx,
+                //         PrimitiveType::TrianglesList,
+                //         draw_list.idx_buffer(),
+                //     )?;
+
+                //     for cmd in draw_list.commands() {
+                //         match cmd {
+                //             DrawCmd::Elements {
+                //                 count,
+                //                 cmd_params:
+                //                     DrawCmdParams {
+                //                         clip_rect,
+                //                         texture_id,
+                //                         vtx_offset,
+                //                         idx_offset,
+                //                         ..
+                //                     },
+                //             } => {
+                //                 let clip_rect = [
+                //                     (clip_rect[0] - clip_off[0]) * clip_scale[0],
+                //                     (clip_rect[1] - clip_off[1]) * clip_scale[1],
+                //                     (clip_rect[2] - clip_off[0]) * clip_scale[0],
+                //                     (clip_rect[3] - clip_off[1]) * clip_scale[1],
+                //                 ];
+
+                //                 if clip_rect[0] < fb_width
+                //                     && clip_rect[1] < fb_height
+                //                     && clip_rect[2] >= 0.0
+                //                     && clip_rect[3] >= 0.0
+                //                 {
+                //                     let texture = self.lookup_texture(texture_id)?;
+
+                //                     target.draw(
+                //                         vtx_buffer
+                //                             .slice(vtx_offset..)
+                //                             .expect("Invalid vertex buffer range"),
+                //                         idx_buffer
+                //                             .slice(idx_offset..(idx_offset + count))
+                //                             .expect("Invalid index buffer range"),
+                //                         &self.program,
+                //                         &uniform! {
+                //                             matrix: matrix,
+                //                             tex: Sampler(texture.texture.as_ref(), texture.sampler)
+                //                         },
+                //                         &DrawParameters {
+                //                             blend: Blend::alpha_blending(),
+                //                             scissor: Some(Rect {
+                //                                 left: f32::max(0.0, clip_rect[0]).floor() as u32,
+                //                                 bottom: f32::max(0.0, fb_height - clip_rect[3]).floor()
+                //                                     as u32,
+                //                                 width: (clip_rect[2] - clip_rect[0]).abs().ceil() as u32,
+                //                                 height: (clip_rect[3] - clip_rect[1]).abs().ceil() as u32,
+                //                             }),
+                //                             ..DrawParameters::default()
+                //                         },
+                //                     )?;
+                //                 }
+                //             }
+                //             DrawCmd::ResetRenderState => (), // TODO
+                //             DrawCmd::RawCallback { callback, raw_cmd } => unsafe {
+                //                 callback(draw_list.raw(), raw_cmd)
+                //             },
+                //         }
+                //     }
+                // }
+            }
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::Resized(size) => {
                     if size.width != 0 && size.height != 0 {
@@ -142,11 +263,14 @@ fn main() {
                 _ => (),
             },
             Event::AboutToWait => {
-                // let renderer = renderer.as_ref().unwrap();
-                renderer.draw();
+                
+                
+                winit_platform
+                    .prepare_frame(imgui_context.io_mut(), &window)
+                    .expect("Failed to prepare frame");
                 window.request_redraw();
 
-                gl_surface.swap_buffers(&gl_context).unwrap();
+                // gl_surface.swap_buffers(&gl_context).unwrap();
             },
             _ => (),
         }

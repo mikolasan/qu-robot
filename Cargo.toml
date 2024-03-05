@@ -14,11 +14,13 @@ path = "src/web/main.rs"
 
 [dependencies]
 actix-web = { version = "4", features = ["compress-brotli", "macros"], default-features = false }
-glutin = "0.31.3"
+glium = { version = "0.33.0", default-features = false, features = ["glutin_backend", "glutin" ] }
+glutin = { version = "0.31.3", features = ["wgl"] }
 glutin-winit = "0.4.2"
 gtk = { version = "0.7.3", package = "gtk4", features = ["v4_12"], optional = true, defaul_features = false }
 imgui = { version = "0.11.0", path = "custom/imgui-rs/imgui" }
 imgui-winit-support = { version = "0.11.0", path = "custom/imgui-rs/imgui-winit-support" }
+imgui-glium-renderer = { version = "0.11.0", path = "custom/imgui-rs/imgui-glium-renderer" }
 ndarray = "0.15.6"
 ndarray-rand = "0.14.0"
 plotters = "0.3.5"
