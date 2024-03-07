@@ -17,14 +17,14 @@ use crate::neuron::{Neuron, self};
 
 // The refractory period is the time during which a neuron is incapable of generating another action potential.
 // Absolute refractory period is the initial phase during which the neuron cannot generate another action potential 
-// under any circumstances typically, it lasts for about 1 to 2 milliseconds. 
+// under any circumstances, typically, it lasts for about 1 to 2 milliseconds. 
 // Following the absolute refractory period, there is a relative refractory period 
 // during which the neuron can generate another action potential, 
 // but only in response to a stronger-than-normal stimulus. Can range from 2 to 4 milliseconds or more.
 
 pub struct Scheduler {
   pool: BTreeMap<String, Arc<Box<Neuron>>>,
-  time: u64,
+  pub time: u64,
 //   propagating: bool,
 //   scheduled: HashMap<u64, Vec<RefCell<Neuron>>>,
 }

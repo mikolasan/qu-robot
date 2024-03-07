@@ -1,5 +1,6 @@
 #![allow(unused_imports)]
 
+use std::collections::HashMap;
 use std::num::NonZeroU32;
 
 use glium::Display;
@@ -25,9 +26,10 @@ use raw_window_handle::HasRawWindowHandle;
 
 // mod renderer;
 // use renderer::Renderer;
-// mod cube;
-// use cube::Cube;
+mod cube;
+use cube::Cube;
 
+use qu::scheduler::Scheduler;
 
 fn gl_config_picker(mut configs: Box<dyn Iterator<Item = Config> + '_>) -> Config {
     // Just use the first configuration since we don't have any special preferences here
@@ -114,6 +116,84 @@ fn imgui_init(window: &Window) -> (WinitPlatform, imgui::Context) {
     (winit_platform, imgui_context)
 }
 
+fn create_scheduler() -> Scheduler {
+    let mut scheduler = Scheduler::new();
+    
+    let signal = scheduler.add_neuron(1, Some("signal".to_string()));
+    let feedback1 = scheduler.add_neuron(1, Some("l1".to_string()));
+    let feedback2 = scheduler.add_neuron(1, Some("l2".to_string()));
+    
+    {
+      let drive1 = scheduler.add_neuron(10, Some("d1".to_string()));
+      let drive2 = scheduler.add_neuron(10, Some("d2".to_string()));
+      let a1 = scheduler.add_neuron(2, Some("a1".to_string()));
+      let a2 = scheduler.add_neuron(2, Some("a2".to_string()));
+      let c1 = scheduler.add_neuron(1, Some("c1".to_string()));
+      let c2 = scheduler.add_neuron(1, Some("c2".to_string()));
+      let uv1 = scheduler.add_neuron(1, Some("uv1".to_string()));
+      let uv2 = scheduler.add_neuron(1, Some("uv2".to_string()));
+      
+      scheduler.connect_neurons(&signal, &a1, Some(1.0));
+      scheduler.connect_neurons(&signal, &a2, Some(1.0));
+      
+      scheduler.connect_neurons(&feedback1, &uv1, Some(0.5));
+      scheduler.connect_neurons(&feedback1, &c1, Some(0.5));
+      scheduler.connect_neurons(&feedback2, &uv2, Some(0.5));
+      scheduler.connect_neurons(&feedback2, &c2, Some(0.5));
+      
+      scheduler.connect_neurons(&uv1, &a1, Some(1.0));
+      scheduler.connect_neurons(&uv1, &uv1, Some(-1.0));
+      scheduler.connect_neurons(&uv1, &uv2, Some(-0.25));
+      scheduler.connect_neurons(&uv1, &c1, Some(0.25));
+      scheduler.connect_neurons(&uv1, &c2, Some(-0.25));
+      
+      scheduler.connect_neurons(&uv2, &a2, Some(1.0));
+      scheduler.connect_neurons(&uv2, &uv2, Some(-1.0));
+      scheduler.connect_neurons(&uv2, &uv1, Some(-0.25));
+      scheduler.connect_neurons(&uv2, &c2, Some(0.25));
+      scheduler.connect_neurons(&uv2, &c1, Some(-0.25));
+
+      scheduler.connect_neurons(&a1, &drive1, Some(1.0));
+      scheduler.connect_neurons(&a1, &uv1, Some(1.0));
+      scheduler.connect_neurons(&a1, &uv2, Some(-0.25));
+      scheduler.connect_neurons(&a2, &drive2, Some(1.0));
+      scheduler.connect_neurons(&a2, &uv2, Some(1.0));
+      scheduler.connect_neurons(&a2, &uv1, Some(-0.25));
+
+      scheduler.connect_neurons(&c1, &c2, Some(-1.0));
+      scheduler.connect_neurons(&c1, &uv1, Some(1.0)); // modulatory
+      scheduler.connect_neurons(&c1, &a1, Some(1.0)); // modulatory
+      scheduler.connect_neurons(&c2, &c1, Some(-1.0));
+      scheduler.connect_neurons(&c2, &uv2, Some(1.0)); // modulatory
+      scheduler.connect_neurons(&c2, &a2, Some(1.0)); // modulatory
+    }
+
+    println!("-- signal 1 ({}) --", scheduler.time);
+    let a1 = scheduler.prepare_next_layer(HashMap::from([
+      (feedback1.clone(), vec![1.0]),
+    ]));
+    scheduler.send_action_potential(a1.clone());
+
+    println!("-- signal 2 ({}) --", scheduler.time);
+    scheduler.send_action_potential(a1);
+
+    println!("-- signal 2 ({}) --", scheduler.time);
+    let a2 = scheduler.prepare_next_layer(HashMap::from([
+      (signal.clone(), vec![1.0]),
+      (feedback1.clone(), vec![1.0]),
+    ]));
+    scheduler.send_action_potential(a2);
+
+    println!("-- signal 3 ({}) --", scheduler.time);
+    let a3 = scheduler.prepare_next_layer(HashMap::from([
+      (signal.clone(), vec![1.0]),
+      (feedback1.clone(), vec![1.0]),
+    ]));
+    scheduler.send_action_potential(a3);
+
+    scheduler
+}
+
 fn main() {
     let (event_loop, 
         window, 
@@ -126,53 +206,10 @@ fn main() {
     // Timer for FPS calculation
     let mut last_frame = std::time::Instant::now();
 
-    event_loop.run(move |event, window_target| {
-        // match event {
-        //     Event::NewEvents(_) => {
-        //         let now = std::time::Instant::now();
-        //         imgui_context.io_mut().update_delta_time(now - last_frame);
-        //         last_frame = now;
-        //     }
-        //     Event::WindowEvent { event, .. } => match event {
-        //         WindowEvent::RedrawRequested => {
-        //             let ui = imgui_context.frame();
-        //             // Draw our example content
-        //             ui.show_demo_window(&mut true);
-                    
-        //             let mut target = display.draw();
-        //             target.clear_color_srgb(1.0, 1.0, 1.0, 1.0);
-        //             winit_platform.prepare_render(ui, &window);
-        //             let draw_data = imgui_context.render();   
-        //             renderer
-        //                 .render(&mut target, draw_data)
-        //                 .expect("Rendering failed");
-        //             target.finish().expect("Failed to swap buffers");
-        //         }
-        //         WindowEvent::Resized(new_size) => {
-        //             if new_size.width > 0 && new_size.height > 0 {
-        //                 display.resize((new_size.width, new_size.height));
-        //             }
-        //             winit_platform.handle_window_event(imgui_context.io_mut(), &window, &event);
-        //         },
-        //         WindowEvent::CloseRequested
-        //         | WindowEvent::KeyboardInput {
-        //             event: KeyEvent { logical_key: Key::Named(NamedKey::Escape), .. },
-        //             ..
-        //         } => window_target.exit(),
-        //         _ => (),
-        //     }
-        //     Event::AboutToWait => {
-        //         winit_platform
-        //             .prepare_frame(imgui_context.io_mut(), &window)
-        //             .expect("Failed to prepare frame");
-        //         window.request_redraw();
+    let cube = Cube::new(&display);
+    let scheduler = create_scheduler();
 
-        //         // gl_surface.swap_buffers(&gl_context).unwrap();
-        //     }
-        //     event => {
-        //         winit_platform.handle_event(imgui_context.io_mut(), &window, &event);
-        //     }
-        // }
+    event_loop.run(move |event, window_target| {
         match event {
             Event::NewEvents(_) => {
                 let now = std::time::Instant::now();
@@ -194,8 +231,9 @@ fn main() {
                 ui.show_demo_window(&mut true);
 
                 let mut target = display.draw();
-                target.clear_color_srgb(1.0, 1.0, 1.0, 1.0);
+                target.clear_color_srgb(0.0, 0.0, 0.0, 1.0);
                 winit_platform.prepare_render(ui, &window);
+                cube.draw(&mut target);
                 let draw_data = imgui_context.render();
                 renderer
                     .render(&mut target, draw_data)

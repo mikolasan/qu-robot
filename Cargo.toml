@@ -4,6 +4,10 @@ version = "0.1.0"
 build = "build.rs"
 edition = "2021"
 
+[lib]
+name = "qu"
+path = "src/lib/lib.rs"
+
 [[bin]]
 name = "qu-gl"
 path = "src/gl/main.rs"
