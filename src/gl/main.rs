@@ -1,10 +1,17 @@
 #![allow(unused_imports)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use std::num::NonZeroU32;
+use std::time::Duration;
+use std::sync::Arc;
 
-use glium::Display;
-use glium::Surface;
+use glium::{
+    backend::Facade, 
+    Display,
+    Frame,
+    Surface
+};
+
 // use glium::glutin::surface::{SurfaceAttributesBuilder, WindowSurface};
 
 use glutin::config::{ConfigTemplateBuilder, Config};
@@ -28,8 +35,12 @@ use raw_window_handle::HasRawWindowHandle;
 // use renderer::Renderer;
 mod cube;
 use cube::Cube;
+mod neuron_shape;
+use neuron_shape::NeuronShape;
 
 use qu::scheduler::Scheduler;
+
+static mut shapes_pool: BTreeMap<String, NeuronShape> = BTreeMap::new();
 
 fn gl_config_picker(mut configs: Box<dyn Iterator<Item = Config> + '_>) -> Config {
     // Just use the first configuration since we don't have any special preferences here
@@ -116,7 +127,7 @@ fn imgui_init(window: &Window) -> (WinitPlatform, imgui::Context) {
     (winit_platform, imgui_context)
 }
 
-fn create_scheduler() -> Scheduler {
+fn create_scheduler<F: Sized + Facade>(display: &F) -> Scheduler {
     let mut scheduler = Scheduler::new();
     
     let signal = scheduler.add_neuron(1, Some("signal".to_string()));
@@ -168,30 +179,49 @@ fn create_scheduler() -> Scheduler {
       scheduler.connect_neurons(&c2, &a2, Some(1.0)); // modulatory
     }
 
-    println!("-- signal 1 ({}) --", scheduler.time);
-    let a1 = scheduler.prepare_next_layer(HashMap::from([
-      (feedback1.clone(), vec![1.0]),
-    ]));
-    scheduler.send_action_potential(a1.clone());
+    // println!("-- signal 1 ({}) --", scheduler.time);
+    // let a1 = scheduler.prepare_next_layer(HashMap::from([
+    //   (feedback1.clone(), vec![1.0]),
+    // ]));
+    // scheduler.send_action_potential(a1.clone());
 
-    println!("-- signal 2 ({}) --", scheduler.time);
-    scheduler.send_action_potential(a1);
+    // println!("-- signal 2 ({}) --", scheduler.time);
+    // scheduler.send_action_potential(a1);
 
-    println!("-- signal 2 ({}) --", scheduler.time);
-    let a2 = scheduler.prepare_next_layer(HashMap::from([
-      (signal.clone(), vec![1.0]),
-      (feedback1.clone(), vec![1.0]),
-    ]));
-    scheduler.send_action_potential(a2);
+    // println!("-- signal 2 ({}) --", scheduler.time);
+    // let a2 = scheduler.prepare_next_layer(HashMap::from([
+    //   (signal.clone(), vec![1.0]),
+    //   (feedback1.clone(), vec![1.0]),
+    // ]));
+    // scheduler.send_action_potential(a2);
 
-    println!("-- signal 3 ({}) --", scheduler.time);
-    let a3 = scheduler.prepare_next_layer(HashMap::from([
-      (signal.clone(), vec![1.0]),
-      (feedback1.clone(), vec![1.0]),
-    ]));
-    scheduler.send_action_potential(a3);
+    // println!("-- signal 3 ({}) --", scheduler.time);
+    // let a3 = scheduler.prepare_next_layer(HashMap::from([
+    //   (signal.clone(), vec![1.0]),
+    //   (feedback1.clone(), vec![1.0]),
+    // ]));
+    // scheduler.send_action_potential(a3);
+
+    for (id, neuron) in scheduler.pool.iter() {
+        let shape = NeuronShape::new(id, display);
+        unsafe { shapes_pool.insert(id.clone(), shape) };        
+    }
 
     scheduler
+}
+
+fn draw_scheduler<F: Sized + Facade>(
+    delta: f32,
+    scheduler: &Scheduler,
+    display: &F,
+    target: &mut Frame
+) {
+    for (id, neuron) in scheduler.pool.iter() {
+        let mut shape = unsafe { shapes_pool.get_mut(id).unwrap() };
+        shape.update(delta);
+        shape.draw(delta, target);
+        // println!("d={} {} - {}", delta, neuron.get_name(), neuron.potential);
+    }
 }
 
 fn main() {
@@ -205,15 +235,18 @@ fn main() {
 
     // Timer for FPS calculation
     let mut last_frame = std::time::Instant::now();
+    let mut delta: Duration = Duration::from_secs_f32(0.0f32);
 
     let cube = Cube::new(&display);
-    let scheduler = create_scheduler();
+    let scheduler = create_scheduler(&display);
 
     event_loop.run(move |event, window_target| {
         match event {
             Event::NewEvents(_) => {
                 let now = std::time::Instant::now();
-                imgui_context.io_mut().update_delta_time(now - last_frame);
+                delta = now - last_frame;
+                
+                imgui_context.io_mut().update_delta_time(delta);
                 last_frame = now;
             }
             Event::AboutToWait => {
@@ -233,7 +266,8 @@ fn main() {
                 let mut target = display.draw();
                 target.clear_color_srgb(0.0, 0.0, 0.0, 1.0);
                 winit_platform.prepare_render(ui, &window);
-                cube.draw(&mut target);
+                draw_scheduler(delta.as_secs_f32(), &scheduler, &display, &mut target);
+                // cube.draw(&mut target);
                 let draw_data = imgui_context.render();
                 renderer
                     .render(&mut target, draw_data)

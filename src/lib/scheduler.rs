@@ -5,7 +5,7 @@ use std::thread;
 use std::collections::{HashMap, BTreeMap};
 use uuid::Uuid;
 
-use crate::neuron::{Neuron, self};
+use crate::neuron::{Neuron};
 
 // The time required to transmit a signal from one neuron through action potential 
 // to dendrites of the next connected neuron can vary, but it typically ranges from 
@@ -23,10 +23,8 @@ use crate::neuron::{Neuron, self};
 // but only in response to a stronger-than-normal stimulus. Can range from 2 to 4 milliseconds or more.
 
 pub struct Scheduler {
-  pool: BTreeMap<String, Arc<Box<Neuron>>>,
+  pub pool: BTreeMap<String, Arc<Box<Neuron>>>,
   pub time: u64,
-//   propagating: bool,
-//   scheduled: HashMap<u64, Vec<RefCell<Neuron>>>,
 }
 
 impl Scheduler {
@@ -91,17 +89,6 @@ impl Scheduler {
     println!(">> time {} <<", self.time);
     self.print_pool();
     self.send_action_potential(neurons_next_layer);
-
-    // let neurons_next_layer: Vec<Vec<&String>> = activated_neurons.into_iter()
-    //   .map(|neuron_id| 
-    //     self.find_neuron_by_id_mut(neuron_id)
-    //       .unwrap()
-    //       .activate()
-    //   )
-    //   .collect();
-    // neurons_next_layer.iter().for_each(|layer| 
-    //   self.send_action_potential(*layer)
-    // );
       
   }
 
@@ -125,49 +112,9 @@ impl Scheduler {
     }
   }
 
-  pub fn start(&self, starting_neurons: &'static mut [&mut Neuron]) {
-    // let mut handle_vec = vec![];
-    // for neuron in starting_neurons.iter_mut() {
-    //   let handle = thread::spawn(move || {
-    //     (*neuron)
-    //       .activate(0);
-    //   });
-    //   handle_vec.push(handle);
-    // }
-    // handle_vec.into_iter()
-    //   .for_each(|handle| handle.join().unwrap());
-    
-    // for neuron in starting_neurons {
-    //   Rc::make_mut(
-    //     self.pool.get_mut(neuron.get_name())
-    //       .unwrap()
-    //   )
-    //     .activate(0);
-    // }
-
-  }
-//   pub fn start(&mut self, starting_neurons: &mut Vec<RefCell<Neuron>>) {
-//     self.propagating = true;
-
-//     while self.propagating {
-//       // check inputs
-//       for neuron in starting_neurons.iter_mut() {
-//         neuron.borrow_mut().activate(self.time);
-//       }
-
-//       if !self.scheduled.contains_key(&self.time) {
-//         println!("nothing scheduled for time {}. stop.", self.time);
-//         self.propagating = false;
-//         break;
-//       }
-//       self.run_scheduled(self.time);
-//       self.time += 1;
-//     }
-//   }
-
   pub fn print_pool(&self) {
     for (id, neuron) in self.pool.iter() {
-        println!("{} - {}", neuron.get_name(), neuron.potential);
+      println!("{} - {}", neuron.get_name(), neuron.potential);
     }
   }
 }

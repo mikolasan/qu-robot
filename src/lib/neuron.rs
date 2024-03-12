@@ -7,8 +7,6 @@ use std::string;
 use std::sync::{Arc,Weak};
 use uuid::Uuid;
 
-// use crate::scheduler::Scheduler;
-
 pub type NeuronId = String;
 
 // struct Axon {
