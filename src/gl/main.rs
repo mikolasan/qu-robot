@@ -204,7 +204,8 @@ fn create_scheduler<F: Sized + Facade>(display: &F) -> Scheduler {
 
     for (id, neuron) in scheduler.pool.iter() {
         let shape = NeuronShape::new(id, display);
-        unsafe { shapes_pool.insert(id.clone(), shape) };        
+        // mutable statics
+        unsafe { shapes_pool.insert(id.clone(), shape) };
     }
 
     scheduler
