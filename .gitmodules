@@ -1,0 +1,6 @@
+[submodule "custom/glium"]
+	path = custom/glium
+	url = https://github.com/glium/glium.git
+[submodule "custom/imgui-rs"]
+	path = custom/imgui-rs
+	url = https://github.com/Rob2309/imgui-rs.git
