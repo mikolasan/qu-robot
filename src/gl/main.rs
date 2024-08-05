@@ -20,7 +20,7 @@ use glutin::display::{GetGlDisplay, GlDisplay};
 use glutin::surface::{SurfaceAttributesBuilder, WindowSurface};
 use glutin_winit::DisplayBuilder;
 
-use imgui::{DrawCmd, DrawCmdParams};
+use imgui::{DrawCmd, DrawCmdParams, Condition};
 // use imgui_glium_renderer::Renderer;
 // use imgui_glium_renderer::glium::backend::Context;
 
@@ -29,6 +29,7 @@ use imgui_winit_support::winit::event::{Event, KeyEvent, WindowEvent};
 use imgui_winit_support::winit::keyboard::{Key, NamedKey};
 use imgui_winit_support::winit::window::{WindowBuilder, Window};
 use imgui_winit_support::winit::event_loop::{EventLoopBuilder, EventLoop};
+use ndarray::linalg::Dot;
 use raw_window_handle::HasRawWindowHandle;
 
 // mod renderer;
@@ -37,6 +38,8 @@ mod cube;
 use cube::Cube;
 mod neuron_shape;
 use neuron_shape::NeuronShape;
+mod line;
+use line::Line;
 
 use qu::scheduler::Scheduler;
 
@@ -202,10 +205,16 @@ fn create_scheduler<F: Sized + Facade>(display: &F) -> Scheduler {
     // ]));
     // scheduler.send_action_potential(a3);
 
+    let mut x: f32 = 0.0;
+    let mut y: f32 = 0.0;
     for (id, neuron) in scheduler.pool.iter() {
-        let shape = NeuronShape::new(id, display);
+        let mut shape = NeuronShape::new(id, display);
+        shape.translation[0] = x;
+        shape.translation[1] = y;
         // mutable statics
         unsafe { shapes_pool.insert(id.clone(), shape) };
+
+        x += 0.15;
     }
 
     scheduler
@@ -213,14 +222,16 @@ fn create_scheduler<F: Sized + Facade>(display: &F) -> Scheduler {
 
 fn draw_scheduler<F: Sized + Facade>(
     delta: f32,
+    perspective: [[f32; 4]; 4],
     scheduler: &Scheduler,
     display: &F,
     target: &mut Frame
 ) {
     for (id, neuron) in scheduler.pool.iter() {
-        let mut shape = unsafe { shapes_pool.get_mut(id).unwrap() };
+        let mut shape = unsafe { 
+            shapes_pool.get_mut(id).unwrap() };
         shape.update(delta);
-        shape.draw(delta, target);
+        shape.draw(delta, perspective, target);
         // println!("d={} {} - {}", delta, neuron.get_name(), neuron.potential);
     }
 }
@@ -240,9 +251,39 @@ fn main() {
 
     let cube = Cube::new(&display);
     let scheduler = create_scheduler(&display);
+    let mut line = Line::new(&display);
+
+    let mut value = 0;
+    let choices = ["test test this is 1", "test test this is 2"];
+    
+    let mut target = display.draw();
+    let (mut width, mut height) = target.get_dimensions();
+    // do not do "target.finish" in the event_loop
+    target.finish().expect("Failed to swap buffers");
+
+    let mut perspective: [[f32; 4]; 4] = {
+        let aspect_ratio = height as f32 / width as f32;
+
+        let fov: f32 = 3.141592 / 3.0;
+        let zfar = 1024.0;
+        let znear = 0.1;
+
+        let f = 1.0 / (fov / 2.0).tan();
+
+        [
+            [f *   aspect_ratio   ,    0.0,              0.0              ,   0.0],
+            [         0.0         ,     f ,              0.0              ,   0.0],
+            [         0.0         ,    0.0,  (zfar+znear)/(zfar-znear)    ,   1.0],
+            [         0.0         ,    0.0, -(2.0*zfar*znear)/(zfar-znear),   0.0],
+        ]
+    };
+    
+    let mut cursor_position: Option<(i32, i32)> = None;
 
     event_loop.run(move |event, window_target| {
+        
         match event {
+            // delta
             Event::NewEvents(_) => {
                 let now = std::time::Instant::now();
                 delta = now - last_frame;
@@ -256,38 +297,109 @@ fn main() {
                     .expect("Failed to prepare frame");
                 window.request_redraw();
             }
+            // redraw
             Event::WindowEvent {
                 event: WindowEvent::RedrawRequested,
                 ..
             } => {
                 let ui = imgui_context.frame();
 
-                ui.show_demo_window(&mut true);
+                // ui.show_demo_window(&mut true);
+                ui.window("qu example")
+                    .size([300.0, 300.0], Condition::FirstUseEver)
+                    .build(|| {
+                        ui.text_wrapped("Hello world!");
+                        if ui.button(choices[value]) {
+                            value += 1;
+                            value %= 2;
+                        }
+        
+                        ui.button("This...is...imgui-rs!");
+                        ui.separator();
+                        let mouse_pos = ui.io().mouse_pos;
+                        ui.text(format!(
+                            "Mouse Position: ({:.1},{:.1})",
+                            mouse_pos[0], mouse_pos[1]
+                        ));
+                    });
 
                 let mut target = display.draw();
                 target.clear_color_srgb(0.0, 0.0, 0.0, 1.0);
                 winit_platform.prepare_render(ui, &window);
-                draw_scheduler(delta.as_secs_f32(), &scheduler, &display, &mut target);
-                // cube.draw(&mut target);
+                draw_scheduler(delta.as_secs_f32(), perspective, &scheduler, &display, &mut target);
+                line.draw(delta.as_secs_f32(), perspective, &mut target);
                 let draw_data = imgui_context.render();
                 renderer
                     .render(&mut target, draw_data)
                     .expect("Rendering failed");
                 target.finish().expect("Failed to swap buffers");
             }
+            // resize
             Event::WindowEvent {
                 event: WindowEvent::Resized(new_size),
                 ..
             } => {
+                // update perspective matrix
+                perspective = {
+                    (width, height) = (new_size.width, new_size.height);
+                    let aspect_ratio = height as f32 / width as f32;
+              
+                    let fov: f32 = 3.141592 / 3.0;
+                    let zfar = 1024.0;
+                    let znear = 0.1;
+              
+                    let f = 1.0 / (fov / 2.0).tan();
+              
+                    [
+                        [f *   aspect_ratio   ,    0.0,              0.0              ,   0.0],
+                        [         0.0         ,     f ,              0.0              ,   0.0],
+                        [         0.0         ,    0.0,  (zfar+znear)/(zfar-znear)    ,   1.0],
+                        [         0.0         ,    0.0, -(2.0*zfar*znear)/(zfar-znear),   0.0],
+                    ]
+                };
+
                 if new_size.width > 0 && new_size.height > 0 {
                     display.resize((new_size.width, new_size.height));
                 }
                 winit_platform.handle_event(imgui_context.io_mut(), &window, &event);
             }
+            // mouse move
+            Event::WindowEvent {
+                event: WindowEvent::CursorMoved {
+                    position,
+                    .. 
+                },
+                ..
+            } => {
+                cursor_position = Some(position.cast::<i32>().into());
+                let ray_origin = [ -1.0, -1.0, 0.0
+                    // ((position.x as f32) / (width as f32) - 0.5) * 2.0,
+                    // ((position.y as f32) / (height as f32) - 0.5) * 2.0,
+                    // -0.0f32
+                ];
+                let ray_direction = [
+                    ((position.x as f32) / (width as f32) - 0.5) * 2.0,
+                    ((position.y as f32) / (height as f32) - 0.5) * -2.0,
+                    0.0f32
+                ];
+                line.update_coords(ray_origin, ray_direction, &display);
+                println!("cursor position {:?}, ray start {:?}, ray end {:?}", 
+                    &cursor_position.unwrap(),
+                    &ray_origin,
+                    &ray_direction
+                );
+                let position_worldspace = [0.0, 0.0, 0.0f32]; // model [3] xyz
+                let x_axis = [1.0, 0.0, 0.0f32]; // model [0] xyz
+                let delta = position_worldspace - ray_origin;
+                let e = dot(x_axis, delta);
+                let x= dot(ray_direction, x_axis);
+            }
+            // close
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
             } => window_target.exit(),
+            // all other events
             event => {
                 winit_platform.handle_event(imgui_context.io_mut(), &window, &event);
             }

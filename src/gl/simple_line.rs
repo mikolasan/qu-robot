@@ -1,9 +1,17 @@
+
+// OBB tutorial https://www.opengl-tutorial.org/miscellaneous/clicking-on-objects/picking-with-custom-ray-obb-function/
+// C++ example how ray should work https://github.com/opengl-tutorials/ogl/blob/master/misc05_picking/misc05_picking_custom.cpp
+// drawing a line for debug https://stackoverflow.com/questions/60440682/drawing-a-line-in-modern-opengl
+// which uses storage shader buffer https://www.khronos.org/opengl/wiki/Shader_Storage_Buffer_Object
+// this is the interface for glium https://github.com/glium/glium/pull/954/files
+// and possible issue if it is dynamic https://github.com/glium/glium/issues/1918
+
 use std::sync::Arc;
 
 use glium::{
   Surface, 
   backend::Facade, 
-  IndexBuffer, VertexBuffer, 
+  IndexBuffer, VertexBuffer,
   Frame,
   implement_vertex,
   uniform
@@ -11,7 +19,7 @@ use glium::{
 
 #[derive(Copy, Clone)]
 struct Vertex {
-  position: [f32; 3],
+  position: [f32; 2],
 }
 implement_vertex!(Vertex, position);
 
@@ -21,60 +29,51 @@ struct Normal {
 }
 implement_vertex!(Normal, normal);
 
-pub struct NeuronShape {
-  // body
+pub struct Line {
   vertex_buffer: VertexBuffer<Vertex>,
   indices: IndexBuffer<u16>,
   normals: VertexBuffer<Normal>,
-  // dendrites
-  // TODO
-  
+  // coords: [f32; 4],
   program: glium::Program,
   pub rotation: f32,
   pub scale: [f32; 3],
   pub translation: [f32; 3],
 }
 
-impl NeuronShape {
-  pub fn new<F: Sized + Facade>(neuron_id: &String, display: &F) -> Self {
+impl Line {
+  pub fn new<F: Sized + Facade>(display: &F) -> Self {
     
-    let shape = vec![
-      Vertex { position: [0.0, 0.0, 0.0] },
-        Vertex { position: [ 0.5,  1.0, 0.0] },
-        Vertex { position: [ 1.0, 0.25, 0.0] }
+    let coords = vec![
+      Vertex { position: [-1.0, -1.0] },
+      Vertex { position: [1.0, 1.0] }
     ];
-    let vertex_buffer = glium::VertexBuffer::new(display, &shape).unwrap();
+    let vertex_buffer = glium::VertexBuffer::new(display, &coords).unwrap();
     let indices = glium::index::NoIndices(glium::index::PrimitiveType::TriangleFan);
-
+    
     let vertex_shader_src = r#"
-      #version 140
+        #version 140
 
-      in vec3 position;
-      
-      uniform mat4 perspective;
-      uniform mat4 rotation;
-      uniform mat4 scale;
-      uniform mat4 translation;
+        in vec2 position;
 
-      void main() {
-        gl_Position = perspective * translation * rotation * scale * vec4(position, 1.0);
-      }
+        void main() {
+            gl_Position = vec4(position, 0.0, 1.0);
+        }
     "#;
 
     let fragment_shader_src = r#"
-      #version 140
+        #version 140
 
-      out vec4 color;
+        out vec4 color;
 
-      void main() {
-        color = vec4(1.0, 0.0, 0.0, 1.0);
-      }
+        void main() {
+            color = vec4(1.0, 0.0, 0.0, 1.0);
+        }
     "#;
 
     let program = glium::Program::from_source(display, vertex_shader_src, fragment_shader_src, None).unwrap();
 
     return Self{ 
-      vertex_buffer:vertex_buffer, 
+      vertex_buffer: vertex_buffer, 
       indices: IndexBuffer::empty(display,glium::index::PrimitiveType::TrianglesList,  0).unwrap(),
       normals: VertexBuffer::empty(display, 0).unwrap(), 
       program: program,
@@ -88,11 +87,7 @@ impl NeuronShape {
     self.rotation += delta;
   }
 
-  pub fn draw(&self, 
-    delta: f32, 
-    perspective: [[f32; 4]; 4],
-    target: &mut Frame
-  ) {
+  pub fn draw(&self, delta: f32, target: &mut Frame) {
     let r = self.rotation;
     let sx: f32 = self.scale[0];
     let sy: f32 = self.scale[1];
@@ -100,11 +95,26 @@ impl NeuronShape {
     let tx: f32 = self.translation[0];
     let ty: f32 = self.translation[1];
     let tz: f32 = self.translation[2];
+    let perspective = {
+      let (width, height) = target.get_dimensions();
+      let aspect_ratio = height as f32 / width as f32;
+
+      let fov: f32 = 3.141592 / 3.0;
+      let zfar = 1024.0;
+      let znear = 0.1;
+
+      let f = 1.0 / (fov / 2.0).tan();
+
+      [
+          [f *   aspect_ratio   ,    0.0,              0.0              ,   0.0],
+          [         0.0         ,     f ,              0.0              ,   0.0],
+          [         0.0         ,    0.0,  (zfar+znear)/(zfar-znear)    ,   1.0],
+          [         0.0         ,    0.0, -(2.0*zfar*znear)/(zfar-znear),   0.0],
+      ]
+    };
     let (c, s) = (r.cos(), r.sin());
     let uniforms = uniform! {
       perspective: perspective,
-      // TODO: add view matrix
-      // view: [],
       // Rotation around the Z-axis: 
       rotation: [
         [c, -s, 0.0, 0.0],
@@ -126,7 +136,7 @@ impl NeuronShape {
       ]
     };
 
-    let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
+    let indices = glium::index::NoIndices(glium::index::PrimitiveType::LineStrip);
     target.draw(&self.vertex_buffer, 
         &indices, 
         &self.program, 
@@ -136,4 +146,4 @@ impl NeuronShape {
   }
 }
 
-unsafe impl Sync for NeuronShape {}
+unsafe impl Sync for Line {}

@@ -1,9 +1,15 @@
+
+// OBB tutorial 
+// https://www.opengl-tutorial.org/miscellaneous/clicking-on-objects/picking-with-custom-ray-obb-function/
+// C++ example how ray should work 
+// https://github.com/opengl-tutorials/ogl/blob/master/misc05_picking/misc05_picking_custom.cpp
+
 use std::sync::Arc;
 
 use glium::{
   Surface, 
   backend::Facade, 
-  IndexBuffer, VertexBuffer, 
+  IndexBuffer, VertexBuffer,
   Frame,
   implement_vertex,
   uniform
@@ -21,60 +27,60 @@ struct Normal {
 }
 implement_vertex!(Normal, normal);
 
-pub struct NeuronShape {
-  // body
+pub struct Line {
   vertex_buffer: VertexBuffer<Vertex>,
   indices: IndexBuffer<u16>,
   normals: VertexBuffer<Normal>,
-  // dendrites
-  // TODO
-  
+  // coords: [f32; 4],
   program: glium::Program,
   pub rotation: f32,
   pub scale: [f32; 3],
   pub translation: [f32; 3],
 }
 
-impl NeuronShape {
-  pub fn new<F: Sized + Facade>(neuron_id: &String, display: &F) -> Self {
+impl Line {
+  pub fn new<F: Sized + Facade>(display: &F) -> Self {
     
-    let shape = vec![
-      Vertex { position: [0.0, 0.0, 0.0] },
-        Vertex { position: [ 0.5,  1.0, 0.0] },
-        Vertex { position: [ 1.0, 0.25, 0.0] }
+    let coords = vec![
+      Vertex { position: [-1.0, -1.0, 0.0] },
+      Vertex { position: [1.0, 1.0, 0.0] }
     ];
-    let vertex_buffer = glium::VertexBuffer::new(display, &shape).unwrap();
-    let indices = glium::index::NoIndices(glium::index::PrimitiveType::TriangleFan);
-
+    let vertex_buffer = glium::VertexBuffer::new(
+      display, 
+      &coords)
+      .unwrap();
+    let indices = glium::index::NoIndices(
+      glium::index::PrimitiveType::TriangleFan);
+    
     let vertex_shader_src = r#"
-      #version 140
+        #version 140
 
-      in vec3 position;
-      
-      uniform mat4 perspective;
-      uniform mat4 rotation;
-      uniform mat4 scale;
-      uniform mat4 translation;
+        in vec3 position;
 
-      void main() {
-        gl_Position = perspective * translation * rotation * scale * vec4(position, 1.0);
-      }
+        void main() {
+            gl_Position = vec4(position, 1.0);
+        }
     "#;
 
     let fragment_shader_src = r#"
-      #version 140
+        #version 140
 
-      out vec4 color;
+        out vec4 color;
 
-      void main() {
-        color = vec4(1.0, 0.0, 0.0, 1.0);
-      }
+        void main() {
+            color = vec4(1.0, 0.0, 0.0, 1.0);
+        }
     "#;
 
-    let program = glium::Program::from_source(display, vertex_shader_src, fragment_shader_src, None).unwrap();
+    let program = glium::Program::from_source(
+      display, 
+      vertex_shader_src, 
+      fragment_shader_src, 
+      None)
+      .unwrap();
 
     return Self{ 
-      vertex_buffer:vertex_buffer, 
+      vertex_buffer: vertex_buffer, 
       indices: IndexBuffer::empty(display,glium::index::PrimitiveType::TrianglesList,  0).unwrap(),
       normals: VertexBuffer::empty(display, 0).unwrap(), 
       program: program,
@@ -84,6 +90,17 @@ impl NeuronShape {
     };
   }
 
+  pub fn update_coords<F: Sized + Facade>(&mut self, start: [f32; 3], end: [f32; 3], display: &F) {
+    let coords = vec![
+      Vertex { position: start },
+      Vertex { position: end }
+    ];
+    self.vertex_buffer = glium::VertexBuffer::new(
+      display, 
+      &coords)
+      .unwrap();
+  }
+  
   pub fn update(&mut self, delta: f32) {
     self.rotation += delta;
   }
@@ -103,8 +120,6 @@ impl NeuronShape {
     let (c, s) = (r.cos(), r.sin());
     let uniforms = uniform! {
       perspective: perspective,
-      // TODO: add view matrix
-      // view: [],
       // Rotation around the Z-axis: 
       rotation: [
         [c, -s, 0.0, 0.0],
@@ -126,7 +141,7 @@ impl NeuronShape {
       ]
     };
 
-    let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
+    let indices = glium::index::NoIndices(glium::index::PrimitiveType::LineStrip);
     target.draw(&self.vertex_buffer, 
         &indices, 
         &self.program, 
@@ -136,4 +151,4 @@ impl NeuronShape {
   }
 }
 
-unsafe impl Sync for NeuronShape {}
+unsafe impl Sync for Line {}
